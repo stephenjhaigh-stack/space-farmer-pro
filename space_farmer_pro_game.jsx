@@ -97,6 +97,8 @@ const makeEventDeck = () => shuf([
   {id:"e10",et:"wildcard",icon:"📦",name:"Supply Shortage",desc:"Seeds only in draft this round."},
   {id:"e11",et:"wildcard",icon:"☀️",name:"Solar Flare",desc:"+1L all tiles. Mirrors malfunction."},
   {id:"e12",et:"wildcard",icon:"🚫",name:"Trade Embargo",desc:"No trading this round."},
+  {id:"e13",et:"vitdamage",icon:"⚠️",name:"Global Unrest",desc:"Earth's Vitality drops by 3, immediately."},
+  {id:"e14",et:"vitheal",icon:"🤝",name:"Emergency Coalition",desc:"Earth's Vitality rises by 2, immediately."},
 ]);
 
 // ── Tile value computation ────────────────────────────────
@@ -177,6 +179,7 @@ function reducer(s, a) {
     const evDeck=[...s.evDeck]; const event=evDeck.shift()||null;
     let efx=blankEfx();
     let log=s.log;
+    let vit=s.vit;
     if(event){
       log=appendLog(log,`Event: ${event.icon} ${event.name}`);
       // Meteor targeting is deliberately NOT resolved here — it needs its own "Activate
@@ -189,8 +192,12 @@ function reducer(s, a) {
       if(event.id==="e10") efx={...efx,seedsOnly:true};
       if(event.id==="e11") efx={...efx,solarFlare:true,mirrorsDown:true};
       if(event.id==="e12") efx={...efx,embargo:true};
+      if(event.id==="e13") vit=Math.max(0,vit-3);
+      if(event.id==="e14") vit=Math.min(10,vit+2);
     }
-    return{...s,evDeck,event,efx,meteorHit:null,meteorResolved:false,eventDrawn:true,log};
+    if(vit<=0) return{...s,evDeck,event,efx,vit:0,meteorHit:null,meteorResolved:false,eventDrawn:true,
+      log:appendLog(log,"Earth collapsed."),phase:"gameover",outcome:"collapse",gameoverMsg:"Earth collapsed. Everyone loses."};
+    return{...s,evDeck,event,efx,vit,meteorHit:null,meteorResolved:false,eventDrawn:true,log};
   }
 
   case "RESOLVE_METEOR": {
@@ -209,7 +216,11 @@ function reducer(s, a) {
 
   case "DEAL_DRAFT": {
     const n=s.players.length, v=s.vit;
-    let count=v>=7?n*2+2:v>=4?n+2:n;
+    // Draft size ramps smoothly with Vitality (n at 0 up to n*2+2 at full 10) instead of
+    // 3 flat tiers — Earth's shipments shrink proportionally with the damage it's taken.
+    // The per-round DRAFT_MIN guarantee below is untouched by this, so a low count never
+    // blocks the minimums a round needs — it only thins out the extra/random filler.
+    let count=n+Math.round((v/10)*(n+2));
     if(s.efx.extraCard) count+=1;
     const sd=[...s.seedDeck], hd=[...s.hwDeck];
     // Hardware is a small, non-renewable pool — deal ALL currently-unlocked hardware every
@@ -244,25 +255,15 @@ function reducer(s, a) {
     const picked=shuf([...avHW,...seedsPicked]);
     const usedS=new Set(seedsPicked.map(c=>c.id));
     const usedH=new Set(avHW.map(c=>c.id));
-    return{...s,draft:picked,seedDeck:sd.filter(c=>!usedS.has(c.id)),hwDeck:hd.filter(c=>!usedH.has(c.id)),draftIdx:0,passStreak:0,phase:"draft"};
-  }
-
-  case "PICK": {
-    const pi=s.draftOrder[s.draftIdx%s.draftOrder.length];
-    const draft=s.draft.filter(c=>c.id!==a.card.id);
-    const players=s.players.map((p,i)=>i!==pi?p:{...p,hand:[...p.hand,a.card]});
-    const next=s.draftIdx+1;
-    const done=!draft.length;
-    return{...s,draft,players,draftIdx:next,passStreak:0,selCard:null,
-      phase:done?(s.efx.embargo?"engineering":"trade"):"draft",
-      tradeIdx:0,engIdx:0,
-      log:appendLog(s.log,`${s.players[pi].name}: ${a.card.name}`)};
-  }
-  case "SKIP_PICK": {
-    const next=s.draftIdx+1;
-    const passStreak=(s.passStreak||0)+1;
-    const done=!s.draft.length||passStreak>=s.draftOrder.length;
-    return{...s,draftIdx:next,passStreak,selCard:null,phase:done?(s.efx.embargo?"engineering":"trade"):"draft",tradeIdx:0,engIdx:0};
+    // Nobody chooses which card they get — Earth hands them out at random, dealt
+    // round-robin through the draft order until the dealt pool is exhausted.
+    let players=s.players;
+    picked.forEach((card,i)=>{
+      const pi=s.draftOrder[i%s.draftOrder.length];
+      players=players.map((p,idx)=>idx!==pi?p:{...p,hand:[...p.hand,card]});
+    });
+    return{...s,players,draft:[],seedDeck:sd.filter(c=>!usedS.has(c.id)),hwDeck:hd.filter(c=>!usedH.has(c.id)),
+      draftIdx:0,passStreak:0,phase:"draft",log:appendLog(s.log,`Draft: ${picked.length} cards dealt at random.`)};
   }
 
   case "NEXT_TRADE": {
@@ -901,18 +902,18 @@ function ContribForm({player,onSubmit}){
             <tr key={k} style={{borderBottom:"1px solid #0d1526"}}>
               <td style={{padding:"4px 6px",color:CC[k]}}>{CL[k]}</td>
               <td style={{textAlign:"center",color:"#c0ccdd"}}>{sp[k]}</td>
-              <td style={{padding:3}}>
-                <div style={{display:"flex",alignItems:"center",gap:4,justifyContent:"center"}}>
-                  <button onClick={()=>adj("s",k,-1)} style={{background:"#1e2d3d",color:"#60a5fa",border:"none",borderRadius:2,width:18,height:18,cursor:"pointer",fontSize:12}}>-</button>
-                  <span style={{color:"#4ade80",minWidth:16,textAlign:"center"}}>{ship[k]}</span>
-                  <button onClick={()=>adj("s",k,1)} style={{background:"#1e2d3d",color:"#60a5fa",border:"none",borderRadius:2,width:18,height:18,cursor:"pointer",fontSize:12}}>+</button>
+              <td style={{padding:4}}>
+                <div style={{display:"flex",alignItems:"center",gap:6,justifyContent:"center"}}>
+                  <button onClick={()=>adj("s",k,-1)} style={{background:"#1e2d3d",color:"#60a5fa",border:"1px solid #2d4a6a",borderRadius:4,width:30,height:30,cursor:"pointer",fontSize:17,fontWeight:"bold",lineHeight:1}}>-</button>
+                  <span style={{color:"#4ade80",minWidth:18,textAlign:"center"}}>{ship[k]}</span>
+                  <button onClick={()=>adj("s",k,1)} style={{background:"#1e2d3d",color:"#60a5fa",border:"1px solid #2d4a6a",borderRadius:4,width:30,height:30,cursor:"pointer",fontSize:17,fontWeight:"bold",lineHeight:1}}>+</button>
                 </div>
               </td>
-              <td style={{padding:3}}>
-                <div style={{display:"flex",alignItems:"center",gap:4,justifyContent:"center"}}>
-                  <button onClick={()=>adj("i",k,-1)} style={{background:"#1e2d3d",color:"#60a5fa",border:"none",borderRadius:2,width:18,height:18,cursor:"pointer",fontSize:12}}>-</button>
-                  <span style={{color:"#c084fc",minWidth:16,textAlign:"center"}}>{inv[k]}</span>
-                  <button onClick={()=>adj("i",k,1)} style={{background:"#1e2d3d",color:"#60a5fa",border:"none",borderRadius:2,width:18,height:18,cursor:"pointer",fontSize:12}}>+</button>
+              <td style={{padding:4}}>
+                <div style={{display:"flex",alignItems:"center",gap:6,justifyContent:"center"}}>
+                  <button onClick={()=>adj("i",k,-1)} style={{background:"#1e2d3d",color:"#60a5fa",border:"1px solid #2d4a6a",borderRadius:4,width:30,height:30,cursor:"pointer",fontSize:17,fontWeight:"bold",lineHeight:1}}>-</button>
+                  <span style={{color:"#c084fc",minWidth:18,textAlign:"center"}}>{inv[k]}</span>
+                  <button onClick={()=>adj("i",k,1)} style={{background:"#1e2d3d",color:"#60a5fa",border:"1px solid #2d4a6a",borderRadius:4,width:30,height:30,cursor:"pointer",fontSize:17,fontWeight:"bold",lineHeight:1}}>+</button>
                 </div>
               </td>
               <td style={{textAlign:"center",color:keep[k]<0?"#f87171":"#607890"}}>{keep[k]}</td>
@@ -1286,51 +1287,26 @@ export default function App(){
           )}
 
           {/* ── DRAFT ─────────────────────────────────────── */}
-          {phase==="draft"&&(()=>{
-            const allDone=!draft.length;
-            const currP=players[draftOrder[draftIdx%draftOrder.length]];
-            return(
-              <div style={S.panel}>
-                <div style={S.h2}>{allDone?"Draft Complete":"Draft — "+currP?.name+"'s pick"}</div>
-                {!allDone&&(remoteMode&&!isMyTurn?<Waiting label={currP?.name}/>:(
-                  <>
-                    <div style={{fontSize:11,color:"#607890",marginBottom:12}}>Pick {draftIdx+1} · {draft.length} cards available</div>
-                    <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
-                      {draft.map(c=><Chip key={c.id} card={c} onClick={()=>D({type:"PICK",card:c})}/>)}
-                      {!draft.length&&<div style={{color:"#607890"}}>Draft row empty.</div>}
+          {phase==="draft"&&(
+            <div style={S.panel}>
+              <div style={S.h2}>Draft Complete</div>
+              <div style={{fontSize:11,color:"#607890",marginBottom:12}}>Earth dealt this round's cards at random — nobody chooses which one they get.</div>
+              <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(players.length,4)},1fr)`,gap:8,marginBottom:16}}>
+                {players.map(p=>(
+                  <div key={p.id} style={{...S.panel,padding:8}}>
+                    <div style={{fontSize:11,color:"#607890",marginBottom:4}}>{p.name}</div>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                      {p.hand.map(c=><div key={c.id} style={{fontSize:10,color:c.t==="seed"?CC[c.crop]:"#93c5fd",background:"rgba(20,30,50,0.8)",border:"1px solid #1e2d3d",borderRadius:2,padding:"2px 5px"}}>{c.name}</div>)}
+                      {!p.hand.length&&<div style={{fontSize:10,color:"#374151"}}>—</div>}
                     </div>
-                    <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12}}>
-                      <button onClick={()=>D({type:"SKIP_PICK"})} style={{...S.btnSm,color:"#607890",background:"transparent",border:"1px solid #1e2d3d"}}>Pass</button>
-                    </div>
-                    <div style={{fontSize:11,color:"#607890",marginBottom:4}}>{currP?.name}'s hand ({currP?.hand.length}):</div>
-                    <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-                      {currP?.hand.map(c=><Chip key={c.id} card={c} onClick={()=>{}}/>)}
-                      {!currP?.hand.length&&<div style={{color:"#374151",fontSize:11}}>Empty</div>}
-                    </div>
-                  </>
-                ))}
-                {allDone&&(
-                  <div>
-                    <div style={{color:"#c0ccdd",marginBottom:12}}>All players have drafted.</div>
-                    <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(players.length,4)},1fr)`,gap:8,marginBottom:16}}>
-                      {players.map(p=>(
-                        <div key={p.id} style={{...S.panel,padding:8}}>
-                          <div style={{fontSize:11,color:"#607890",marginBottom:4}}>{p.name}</div>
-                          <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
-                            {p.hand.map(c=><div key={c.id} style={{fontSize:10,color:c.t==="seed"?CC[c.crop]:"#93c5fd",background:"rgba(20,30,50,0.8)",border:"1px solid #1e2d3d",borderRadius:2,padding:"2px 5px"}}>{c.name}</div>)}
-                            {!p.hand.length&&<div style={{fontSize:10,color:"#374151"}}>—</div>}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    <button onClick={()=>D({type:efx.embargo?"SKIP_TRADE":"NEXT_TRADE"})} style={S.btn}>
-                      → {efx.embargo?"Skip to Engineering":"Trading Window"}
-                    </button>
                   </div>
-                )}
+                ))}
               </div>
-            );
-          })()}
+              <button onClick={()=>D({type:efx.embargo?"SKIP_TRADE":"NEXT_TRADE"})} style={S.btn}>
+                → {efx.embargo?"Skip to Engineering":"Trading Window"}
+              </button>
+            </div>
+          )}
 
           {/* ── TRADE ─────────────────────────────────────── */}
           {phase==="trade"&&(
