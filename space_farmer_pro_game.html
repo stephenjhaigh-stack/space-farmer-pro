@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Space Farmer Pro — Game Tester</title>
+<title>Space Farmer Pro</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -324,7 +324,7 @@ const BTN={fontFamily:PIXEL,fontSize:10,lineHeight:1.6,background:"#134e4a",colo
 const BTN2={fontFamily:PIXEL,fontSize:8,lineHeight:1.6,background:"#1e3a5a",color:"#93c5fd",border:"2px solid #1d4ed8",borderRadius:2,padding:"7px 10px",cursor:"pointer",boxShadow:"2px 2px 0 #0c1e3a"};
 const H2={fontFamily:PIXEL,fontSize:12,fontWeight:"normal",color:"#40d9c4",marginBottom:10,letterSpacing:0.5,lineHeight:1.6};
 const LBL={fontSize:11,color:"#607890",letterSpacing:1,textTransform:"uppercase"};
-const INP={background:"#0a0f1c",color:"#c0ccdd",border:"1px solid #1e2d3d",borderRadius:2,padding:"8px 10px",fontFamily:"monospace",fontSize:13,width:"100%",marginBottom:6};
+const INP={background:"#0a0f1c",color:"#c0ccdd",border:"1px solid #1e2d3d",borderRadius:2,padding:"8px 10px",fontFamily:"monospace",fontSize:16,width:"100%",marginBottom:6};
 
 // ─── COMPONENTS ──────────────────────────────────────────
 function VBar({v}){
@@ -387,7 +387,11 @@ function LoadingScreen({onBegin,volume,muted,onVolume,onMute,onUnlockAudio}){
         :root{--sfp-cursor:${CURSOR_HAND};}
         *{cursor:var(--sfp-cursor) !important;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
         img{-webkit-user-drag:none;user-drag:none;}
-        input[type="text"]{cursor:text !important;-webkit-user-select:text;user-select:text;}`;
+        input[type="text"]{cursor:text !important;-webkit-user-select:text;user-select:text;}
+        @media (max-width:820px){
+          .sfp-game-layout{flex-direction:column !important;}
+          .sfp-sidebar{width:100% !important;}
+        }`;
       document.head.appendChild(style);
     }
     const t=setTimeout(()=>setSlid(true),40);
@@ -567,7 +571,7 @@ function PGrid({player,sunPos,efx,isActive,selCard,onPlace,onLift,onSetDir}){
                   {["up","right","down","left"].map((dir,i)=>{
                     const sel=(tile.c.dirs||[]).includes(dir);
                     return <button key={dir} onClick={e=>{e.stopPropagation();const cur=tile.c.dirs||[],max=tile.c.card.hwt==="uMirror"?2:1;const nd=sel?cur.filter(x=>x!==dir):[...cur,dir].slice(-max);onSetDir(tile.id,nd);}}
-                      style={{fontSize:8,padding:"0 2px",background:sel?"#854d0e":"#1e3a5a",color:sel?"#fde047":"#93c5fd",border:"none",borderRadius:2,cursor:"pointer"}}>{"URDL"[i]}</button>;
+                      style={{fontSize:8,padding:"3px 5px",background:sel?"#854d0e":"#1e3a5a",color:sel?"#fde047":"#93c5fd",border:"none",borderRadius:2,cursor:"pointer"}}>{"URDL"[i]}</button>;
                   })}
                 </div>
               }
@@ -718,6 +722,18 @@ function App(){
   const[connectMode,setConnectMode]=useState(null);
   const[roomCode,setRoomCode]=useState(null);
   const[mySeat,setMySeat]=useState(0);
+  const[copied,setCopied]=useState(false);
+  const copyRoomCode=()=>{
+    const fallback=()=>{
+      const ta=document.createElement("textarea");ta.value=roomCode;document.body.appendChild(ta);ta.select();
+      try{document.execCommand("copy");}catch(e){}
+      document.body.removeChild(ta);
+    };
+    if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(roomCode).catch(fallback);
+    else fallback();
+    setCopied(true);
+    setTimeout(()=>setCopied(false),1500);
+  };
   const stateRef=useRef(state);
   stateRef.current=state;
   const D=a=>{
@@ -809,11 +825,11 @@ function App(){
     <div style={{...P,width:"100%",maxWidth:400,border:"2px solid #134e4a",boxShadow:"0 0 24px rgba(19,78,74,0.4)"}}>
       <div style={{textAlign:"center",marginBottom:22}}>
         <div style={{fontFamily:PIXEL,fontSize:14,color:"#40d9c4",letterSpacing:1,lineHeight:1.8,textShadow:"2px 2px 0 #134e4a"}}>SPACE FARMER<br/>PRO</div>
-        <div style={{fontSize:11,color:"#607890",marginTop:8}}>Game Workflow Tester</div>
       </div>
       {connectMode==="online"&&<div style={{...P,marginBottom:14,textAlign:"center",border:"1px solid #facc15"}}>
         <div style={{fontSize:10,color:"#607890"}}>Room code — share this with your friend:</div>
         <div style={{fontFamily:PIXEL,fontSize:20,color:"#facc15",letterSpacing:6,marginTop:8}}>{roomCode}</div>
+        <button onClick={copyRoomCode} style={{...BTN2,marginTop:10,width:"100%"}}>{copied?"✓ Copied!":"📋 Copy Room Code"}</button>
       </div>}
       {connectMode!=="online"&&<div style={{marginBottom:10}}><div style={{...LBL,marginBottom:6}}>Players</div>
         <div style={{display:"flex",gap:6}}>{[2,3,4].map(n=><button key={n} onClick={()=>setPCount(n)} style={{...BTN,background:pCount===n?"#134e4a":"#0a0f1c",color:pCount===n?"#40d9c4":"#607890"}}>{n}P</button>)}</div>
@@ -878,7 +894,7 @@ function App(){
       <VolumeControl volume={volume} muted={muted} onVolume={setVolume} onMute={()=>setMuted(m=>!m)}/>
     </div>
 
-    <div style={{display:"flex",gap:16,padding:"16px 24px",width:"min(1700px,96vw)",margin:"0 auto",position:"relative"}}>
+    <div className="sfp-game-layout" style={{display:"flex",gap:16,padding:"16px 24px",width:"min(1700px,96vw)",margin:"0 auto",position:"relative"}}>
       {/* Main content */}
       <div style={{flex:1,minWidth:0}}>
 
@@ -1074,7 +1090,7 @@ function App(){
       </div>
 
       {/* Sidebar */}
-      <div style={{width:300,flexShrink:0,display:"flex",flexDirection:"column",gap:14}}>
+      <div className="sfp-sidebar" style={{width:300,flexShrink:0,display:"flex",flexDirection:"column",gap:14}}>
         <div style={P}>
           <div style={{...LBL,marginBottom:8}}>Sun Dial</div>
           <SDial pos={sunPos}/>

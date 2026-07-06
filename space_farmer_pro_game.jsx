@@ -525,6 +525,10 @@ function LoadingScreen({onBegin,volume,muted,onVolume,onMute,onUnlockAudio}){
         *{cursor:var(--sfp-cursor) !important;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
         img{-webkit-user-drag:none;user-drag:none;}
         input[type="text"]{cursor:text !important;-webkit-user-select:text;user-select:text;}
+        @media (max-width:820px){
+          .sfp-game-layout{flex-direction:column !important;}
+          .sfp-sidebar{width:100% !important;}
+        }
       `;
       document.head.appendChild(style);
     }
@@ -795,7 +799,7 @@ function Grid({player,sunPos,efx,isActive,selCard,onPlace,onLift,onSetDir}){
                               const cur=tile.c.dirs||[], max=tile.c.card.hwt==="uMirror"?2:1;
                               const nd=sel?cur.filter(x=>x!==dir):[...cur,dir].slice(-max);
                               onSetDir(tile.id,nd);
-                            }} style={{fontSize:9,padding:"1px 3px",background:sel?"#854d0e":"#1e3a5a",color:sel?"#fde047":"#93c5fd",border:"none",borderRadius:2,cursor:"pointer"}}>{label}</button>;
+                            }} style={{fontSize:9,padding:"4px 6px",background:sel?"#854d0e":"#1e3a5a",color:sel?"#fde047":"#93c5fd",border:"none",borderRadius:2,cursor:"pointer"}}>{label}</button>;
                           })}
                         </div>
                       )}
@@ -1003,6 +1007,18 @@ export default function App(){
   const[connectMode,setConnectMode]=useState(null);
   const[roomCode,setRoomCode]=useState(null);
   const[mySeat,setMySeat]=useState(0);
+  const[copied,setCopied]=useState(false);
+  const copyRoomCode=()=>{
+    const fallback=()=>{
+      const ta=document.createElement("textarea");ta.value=roomCode;document.body.appendChild(ta);ta.select();
+      try{document.execCommand("copy");}catch(e){}
+      document.body.removeChild(ta);
+    };
+    if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(roomCode).catch(fallback);
+    else fallback();
+    setCopied(true);
+    setTimeout(()=>setCopied(false),1500);
+  };
   const stateRef=useRef(state);
   stateRef.current=state;
   const D=a=>{
@@ -1114,12 +1130,12 @@ export default function App(){
         <div style={{...S.panel,width:"100%",maxWidth:400,border:"2px solid #134e4a",boxShadow:"0 0 24px rgba(19,78,74,0.4)"}}>
           <div style={{textAlign:"center",marginBottom:26}}>
             <div style={{fontFamily:PIXEL,fontSize:15,color:"#40d9c4",letterSpacing:1,lineHeight:1.8,textShadow:"2px 2px 0 #134e4a"}}>SPACE FARMER<br/>PRO</div>
-            <div style={{fontSize:11,color:"#607890",marginTop:10}}>Game Workflow Tester</div>
           </div>
           {connectMode==="online"&&(
             <div style={{...S.panel,marginBottom:16,textAlign:"center",border:"1px solid #facc15"}}>
               <div style={{fontSize:10,color:"#607890"}}>Room code — share this with your friend:</div>
               <div style={{fontFamily:PIXEL,fontSize:20,color:"#facc15",letterSpacing:6,marginTop:8}}>{roomCode}</div>
+              <button onClick={copyRoomCode} style={{...S.btnSm,marginTop:10,width:"100%"}}>{copied?"✓ Copied!":"📋 Copy Room Code"}</button>
             </div>
           )}
           {connectMode!=="online"&&(
@@ -1132,7 +1148,7 @@ export default function App(){
           )}
           {Array.from({length:count},(_,i)=>(
             <input key={i} value={names[i]} onChange={e=>{const n=[...names];n[i]=e.target.value;setNames(n);}}
-              style={{display:"block",width:"100%",background:"#0a0f1c",color:"#c0ccdd",border:"1px solid #1e2d3d",borderRadius:2,padding:"8px 10px",fontFamily:"monospace",fontSize:13,marginBottom:6,boxSizing:"border-box"}}
+              style={{display:"block",width:"100%",background:"#0a0f1c",color:"#c0ccdd",border:"1px solid #1e2d3d",borderRadius:2,padding:"8px 10px",fontFamily:"monospace",fontSize:16,marginBottom:6,boxSizing:"border-box"}}
               placeholder={`Player ${i+1}`}/>
           ))}
           <button onClick={()=>{D({type:"RESET",names:names.slice(0,count)});setStarted(true);}}
@@ -1219,7 +1235,7 @@ export default function App(){
         <VolumeControl volume={volume} muted={muted} onVolume={setVolume} onMute={()=>setMuted(m=>!m)}/>
       </div>
 
-      <div style={{display:"flex",gap:16,padding:"16px 24px",width:"min(1700px,96vw)",margin:"0 auto"}}>
+      <div className="sfp-game-layout" style={{display:"flex",gap:16,padding:"16px 24px",width:"min(1700px,96vw)",margin:"0 auto"}}>
         {/* MAIN */}
         <div style={{flex:1,minWidth:0,fontSize:13}}>
 
@@ -1552,7 +1568,7 @@ export default function App(){
         </div>
 
         {/* SIDEBAR */}
-        <div style={{width:300,flexShrink:0,display:"flex",flexDirection:"column",gap:14}}>
+        <div className="sfp-sidebar" style={{width:300,flexShrink:0,display:"flex",flexDirection:"column",gap:14}}>
           {/* Sun + demand, grouped — this is the "what matters this round" corner */}
           <div style={S.panel}>
             <div style={{...S.label,marginBottom:8,fontSize:11}}>Sun Dial</div>
