@@ -381,8 +381,9 @@ function LoadingScreen({onBegin,volume,muted,onVolume,onMute,onUnlockAudio}){
         button:active{transform:translate(2px,2px);box-shadow:none!important;}
         ::selection{background:#0d9488;color:#02040a;}
         :root{--sfp-cursor:${CURSOR_HAND};}
-        *{cursor:var(--sfp-cursor) !important;}
-        input[type="text"]{cursor:text !important;}`;
+        *{cursor:var(--sfp-cursor) !important;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
+        img{-webkit-user-drag:none;user-drag:none;}
+        input[type="text"]{cursor:text !important;-webkit-user-select:text;user-select:text;}`;
       document.head.appendChild(style);
     }
     const t=setTimeout(()=>setSlid(true),40);
@@ -467,7 +468,7 @@ function IntroStory({onDone}){
     <Starfield/>
     <button onClick={onDone} style={{position:"absolute",top:16,right:20,...BTN2,background:"transparent",border:"1px solid #1e2d3d",color:"#607890",zIndex:5}}>Skip Intro →</button>
     {isStory&&<>
-      <img src={sp.img==="earth"?IMG_EARTH:IMG_ASTEROID} alt=""
+      <img src={sp.img==="earth"?IMG_EARTH:IMG_ASTEROID} alt="" draggable={false}
         style={sp.img==="earth"
           ?{position:"absolute",left:"50%",bottom:"-30%",transform:"translateX(-50%)",width:"min(900px,110vw)"}
           :{position:"absolute",left:"50%",top:"54%",transform:"translate(-50%,-50%)",width:"min(520px,70vw)"}}/>
