@@ -151,7 +151,7 @@ function makeState(names) {
     contribIdx:0, contribsRevealed:false,
     engIdx:0, tradePile:[], selCard:null,
     log:["Mission started. Round 1 begins."],
-    gameStarted: false,
+    gameStarted: false, winner:null, winners:[], tiebreak:null,
   };
 }
 
@@ -361,6 +361,11 @@ function reducer(s, a) {
     return{...s,players};
   }
 
+  case "SET_AGRI_WATER": {
+    const players=s.players.map(p=>p.id!==a.pid?p:{...p,colony:{...p.colony,agriWater:a.tid}});
+    return{...s,players};
+  }
+
   case "NEXT_ENG": {
     const next=s.engIdx+1;
     if(next>=s.players.length) return{...s,phase:"harvest",engIdx:0,selCard:null};
@@ -435,13 +440,33 @@ function reducer(s, a) {
   }
 
   case "END_ROUND": {
-    for(const p of s.players){
-      if(p.colony.ls.every(Boolean)&&p.colony.ag.every(Boolean)&&p.colony.re.every(Boolean))
-        return{...s,phase:"gameover",outcome:"selfsuff",gameoverMsg:`${p.name} achieved self-sufficiency — Instant Win!`,winner:p.name};
+    // A pending tiebreak (set below) is resolved FIRST, using the harvest that just
+    // happened this round — otherwise the same tie condition (maxed colony / tied DP)
+    // would just re-trigger forever. Most-harvested-this-round wins; still tied after
+    // one bonus round means it's a genuine draw.
+    if(s.tiebreak){
+      const{contenders,reason}=s.tiebreak;
+      const counts=contenders.map(name=>({name,count:(s.harvestResults||[]).filter(h=>h.player===name&&h.ok).length}));
+      const maxCount=Math.max(...counts.map(c=>c.count));
+      const winners=counts.filter(c=>c.count===maxCount).map(c=>c.name);
+      if(winners.length===1)
+        return{...s,phase:"gameover",outcome:reason,winner:winners[0],winners,
+          gameoverMsg:`${winners[0]} wins the tiebreaker — most harvested this bonus round (${maxCount}).`};
+      return{...s,phase:"gameover",outcome:"draw",winner:null,winners,
+        gameoverMsg:`True draw! ${winners.join(" & ")} tied again even in the tiebreak round (${maxCount} each).`};
     }
+    const selfSuff=s.players.filter(p=>p.colony.ls.every(Boolean)&&p.colony.ag.every(Boolean)&&p.colony.re.every(Boolean));
+    if(selfSuff.length===1)
+      return{...s,phase:"gameover",outcome:"selfsuff",gameoverMsg:`${selfSuff[0].name} achieved self-sufficiency — Instant Win!`,winner:selfSuff[0].name,winners:[selfSuff[0].name]};
+    if(selfSuff.length>1)
+      return startRound({...s,round:s.round+1,tiebreak:{contenders:selfSuff.map(p=>p.name),reason:"selfsuff"},contribIdx:0,contribsRevealed:false,selCard:null,engIdx:0});
     if(s.round>=6){
       const sc=s.players.map(p=>({name:p.name,dp:calcDP(p,s.vit)})).sort((a,b)=>b.dp-a.dp);
-      return{...s,phase:"gameover",outcome:"earthsaved",gameoverMsg:`Game over! ${sc.map(x=>`${x.name}: ${x.dp}DP`).join(" · ")}`,winner:sc[0].name};
+      const top=sc[0].dp, tied=sc.filter(x=>x.dp===top);
+      const scoreLine=sc.map(x=>`${x.name}: ${x.dp}DP`).join(" · ");
+      if(tied.length>1)
+        return startRound({...s,round:s.round+1,tiebreak:{contenders:tied.map(x=>x.name),reason:"earthsaved"},contribIdx:0,contribsRevealed:false,selCard:null,engIdx:0});
+      return{...s,phase:"gameover",outcome:"earthsaved",gameoverMsg:`Game over! ${scoreLine}`,winner:sc[0].name,winners:[sc[0].name]};
     }
     // This round's harvest leader(s) get first pick in next round's draft; everyone else
     // keeps their existing relative order behind them.
@@ -1265,10 +1290,12 @@ export default function App(){
 
   // ── Game over ───────────────────────────────────────────
   if(state.phase==="gameover"){
+    const winners=state.winners||(state.winner?[state.winner]:[]);
     const OUTCOMES={
       selfsuff:{icon:"🏙️✨",title:"COLONY ESTABLISHED",sub:`${state.winner} reached full self-sufficiency and wins immediately — every other colony is abandoned, regardless of DP.`,border:"#a16207",titleColor:"#fde047"},
       earthsaved:{icon:"🌍💚",title:"EARTH SAVED",sub:"Six rounds complete, Earth still stands. Final scores, adjusted by Earth's Vitality:",border:"#134e4a",titleColor:"#40d9c4"},
       collapse:{icon:"🥀🧑‍🌾",title:"EARTH HAS FALLEN",sub:"Vitality reached zero. The last transmission from Earth goes silent — no one wins.",border:"#7f1d1d",titleColor:"#f87171"},
+      draw:{icon:"🤝🏆",title:"IT'S A DRAW",sub:state.gameoverMsg,border:"#a16207",titleColor:"#fde047"},
     };
     const o=OUTCOMES[state.outcome]||{icon:state.winner?"🏆":"💀",title:state.winner?"MISSION COMPLETE":"MISSION FAILED",sub:state.gameoverMsg,border:"#134e4a",titleColor:"#40d9c4"};
     return(
@@ -1284,9 +1311,9 @@ export default function App(){
           {state.players.map(p=>{
             const dp=calcDP(p,state.vit);
             const{ls,ag,re}=p.colony;
-            const isWinner=state.winner===p.name;
+            const isWinner=winners.includes(p.name);
             return(
-              <div key={p.id} style={{...S.panel,textAlign:"left",marginBottom:8,border:isWinner?"1px solid #fde047":undefined,opacity:state.outcome==="selfsuff"&&!isWinner?0.5:1}}>
+              <div key={p.id} style={{...S.panel,textAlign:"left",marginBottom:8,border:isWinner?"1px solid #fde047":undefined,opacity:(state.outcome==="selfsuff"||state.outcome==="draw")&&!isWinner?0.5:1}}>
                 <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
                   <span style={{color:"#c0ccdd",fontWeight:"bold"}}>{isWinner?"🏆 ":""}{p.name}</span>
                   <span style={{color:"#40d9c4",fontWeight:"bold"}}>{dp} DP</span>
@@ -1302,7 +1329,7 @@ export default function App(){
     );
   }
 
-  const{phase,round,sunPos,vit,players,draft,draftIdx,draftOrder,engIdx,tradePile,event,efx,meteorHit,eventDrawn,meteorResolved,harvestResults,harvestLeaders,shipResult,contribs,contribIdx,contribsRevealed,selCard,log}=state;
+  const{phase,round,sunPos,vit,players,draft,draftIdx,draftOrder,engIdx,tradePile,event,efx,meteorHit,eventDrawn,meteorResolved,harvestResults,harvestLeaders,shipResult,contribs,contribIdx,contribsRevealed,selCard,log,tiebreak}=state;
   const demand=DEMAND[round]||{g:0,gr:0,ex:0};
   const adjDem={g:demand.g+efx.demG,gr:demand.gr,ex:efx.demExDouble?demand.ex*2:demand.ex};
   // Whose turn it visibly is, for the ship marker in the Players panel — simultaneous
@@ -1339,6 +1366,11 @@ export default function App(){
           {phase==="event"&&(
             <div style={S.panel}>
               <div style={S.h2}>Round {round} — Sun & Event</div>
+              {tiebreak&&(
+                <div style={{...S.panel,border:"1px solid #a16207",marginBottom:12,color:"#fde047",fontSize:12}}>
+                  🏆 Tiebreak round — {tiebreak.contenders.join(" & ")} tied. Whoever harvests the most this round wins outright; still tied after this and it's a true draw.
+                </div>
+              )}
               <div style={{marginBottom:16}}>
                 {!eventDrawn?(
                   <div style={{...S.panel,textAlign:"center",padding:28}}>

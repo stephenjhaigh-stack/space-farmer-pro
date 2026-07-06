@@ -161,7 +161,7 @@ function makeState(names){
     contribs:names.map((_,id)=>({id,ship:{g:0,gr:0,ex:0},invest:{g:0,gr:0,ex:0},done:false})),
     contribIdx:0,contribsRevealed:false,
     engIdx:0,selCard:null,
-    log:["Mission launched."],gameoverMsg:null,winner:null,gameStarted:false,
+    log:["Mission launched."],gameoverMsg:null,winner:null,winners:[],tiebreak:null,gameStarted:false,
   };
 }
 const alog=(log,msg)=>[...log,msg].slice(-12);
@@ -308,6 +308,10 @@ function reducer(s,a){
     const players=s.players.map((p,i)=>i!==pi?p:{...p,grid:p.grid.map(t=>t.id===a.tileId&&t.c&&t.c.t==="hw"?{...t,c:{...t.c,dirs:a.dirs}}:t)});
     return{...s,players};
   }
+  case"SET_AGRI_WATER":{
+    const players=s.players.map(p=>p.id!==a.pid?p:{...p,colony:{...p.colony,agriWater:a.tid}});
+    return{...s,players};
+  }
   case"NEXT_ENG":{const next=s.engIdx+1;if(next>=s.players.length)return{...s,phase:"harvest",engIdx:0,selCard:null};return{...s,engIdx:next,selCard:null};}
   case"HARVEST":{
     const hLog=[];
@@ -357,8 +361,30 @@ function reducer(s,a){
     return{...s,players,contribsRevealed:true,shipResult,vit:newVit,log};
   }
   case"END_ROUND":{
-    for(const p of s.players){if(p.colony.ls.every(Boolean)&&p.colony.ag.every(Boolean)&&p.colony.re.every(Boolean))return{...s,phase:"gameover",outcome:"selfsuff",gameoverMsg:`${p.name}: Self-Sufficiency — Instant Win!`,winner:p.name};}
-    if(s.round>=6){const sc=s.players.map(p=>({name:p.name,dp:calcDP(p,s.vit)})).sort((a,b)=>b.dp-a.dp);return{...s,phase:"gameover",outcome:"earthsaved",gameoverMsg:`Game over! ${sc.map(x=>`${x.name}: ${x.dp}DP`).join(" · ")}`,winner:sc[0].name};}
+    // A pending tiebreak (set below) is resolved FIRST, using the harvest that just
+    // happened this round — otherwise the same tie condition (maxed colony / tied DP)
+    // would just re-trigger forever. Most-harvested-this-round wins; still tied after
+    // one bonus round means it's a genuine draw.
+    if(s.tiebreak){
+      const{contenders,reason}=s.tiebreak;
+      const counts=contenders.map(name=>({name,count:(s.harvestResults||[]).filter(h=>h.player===name&&h.ok).length}));
+      const maxCount=Math.max(...counts.map(c=>c.count));
+      const winners=counts.filter(c=>c.count===maxCount).map(c=>c.name);
+      if(winners.length===1)return{...s,phase:"gameover",outcome:reason,winner:winners[0],winners,
+        gameoverMsg:`${winners[0]} wins the tiebreaker — most harvested this bonus round (${maxCount}).`};
+      return{...s,phase:"gameover",outcome:"draw",winner:null,winners,
+        gameoverMsg:`True draw! ${winners.join(" & ")} tied again even in the tiebreak round (${maxCount} each).`};
+    }
+    const selfSuff=s.players.filter(p=>p.colony.ls.every(Boolean)&&p.colony.ag.every(Boolean)&&p.colony.re.every(Boolean));
+    if(selfSuff.length===1)return{...s,phase:"gameover",outcome:"selfsuff",gameoverMsg:`${selfSuff[0].name}: Self-Sufficiency — Instant Win!`,winner:selfSuff[0].name,winners:[selfSuff[0].name]};
+    if(selfSuff.length>1)return startRound({...s,round:s.round+1,tiebreak:{contenders:selfSuff.map(p=>p.name),reason:"selfsuff"},contribIdx:0,contribsRevealed:false,selCard:null,engIdx:0});
+    if(s.round>=6){
+      const sc=s.players.map(p=>({name:p.name,dp:calcDP(p,s.vit)})).sort((a,b)=>b.dp-a.dp);
+      const top=sc[0].dp,tied=sc.filter(x=>x.dp===top);
+      const scoreLine=sc.map(x=>`${x.name}: ${x.dp}DP`).join(" · ");
+      if(tied.length>1)return startRound({...s,round:s.round+1,tiebreak:{contenders:tied.map(x=>x.name),reason:"earthsaved"},contribIdx:0,contribsRevealed:false,selCard:null,engIdx:0});
+      return{...s,phase:"gameover",outcome:"earthsaved",gameoverMsg:`Game over! ${scoreLine}`,winner:sc[0].name,winners:[sc[0].name]};
+    }
     const leaders=s.harvestLeaders||[];
     const rest=s.players.map((_,i)=>i).filter(i=>!leaders.includes(i));
     return startRound({...s,round:s.round+1,contribIdx:0,contribsRevealed:false,selCard:null,engIdx:0,draftOrder:[...leaders,...rest],contribs:s.players.map(p=>({id:p.id,ship:{g:0,gr:0,ex:0},invest:{g:0,gr:0,ex:0},done:false}))});
@@ -923,10 +949,12 @@ function App(){
 
   // Game over
   if(state.phase==="gameover"){
+    const winners=state.winners||(state.winner?[state.winner]:[]);
     const OUTCOMES={
       selfsuff:{icon:"🏙️✨",title:"COLONY ESTABLISHED",sub:`${state.winner} reached full self-sufficiency and wins immediately — every other colony is abandoned, regardless of DP.`,border:"#a16207",titleColor:"#fde047"},
       earthsaved:{icon:"🌍💚",title:"EARTH SAVED",sub:"Six rounds complete, Earth still stands. Final scores, adjusted by Earth's Vitality:",border:"#134e4a",titleColor:"#40d9c4"},
       collapse:{icon:"🥀🧑‍🌾",title:"EARTH HAS FALLEN",sub:"Vitality reached zero. The last transmission from Earth goes silent — no one wins.",border:"#7f1d1d",titleColor:"#f87171"},
+      draw:{icon:"🤝🏆",title:"IT'S A DRAW",sub:state.gameoverMsg,border:"#a16207",titleColor:"#fde047"},
     };
     const o=OUTCOMES[state.outcome]||{icon:state.winner?"🏆":"💀",title:state.winner?"MISSION COMPLETE":"MISSION FAILED",sub:state.gameoverMsg,border:"#134e4a",titleColor:"#40d9c4"};
     return <div style={{background:"#02040a",minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:16,position:"relative"}}>
@@ -936,7 +964,7 @@ function App(){
         <div style={{fontSize:40,marginBottom:8}}>{o.icon}</div>
         <div style={{fontFamily:PIXEL,fontSize:14,color:o.titleColor,marginBottom:14,lineHeight:1.8,letterSpacing:0.5}}>{o.title}</div>
         <div style={{color:"#c0ccdd",marginBottom:16,lineHeight:1.5}}>{o.sub}</div>
-        {state.players.map(p=>{const dp=calcDP(p,state.vit);const isWinner=state.winner===p.name;return <div key={p.id} style={{...P,textAlign:"left",marginBottom:6,border:isWinner?"1px solid #fde047":undefined,opacity:state.outcome==="selfsuff"&&!isWinner?0.5:1}}>
+        {state.players.map(p=>{const dp=calcDP(p,state.vit);const isWinner=winners.includes(p.name);return <div key={p.id} style={{...P,textAlign:"left",marginBottom:6,border:isWinner?"1px solid #fde047":undefined,opacity:(state.outcome==="selfsuff"||state.outcome==="draw")&&!isWinner?0.5:1}}>
           <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:"#c0ccdd",fontWeight:"bold"}}>{isWinner?"🏆 ":""}{p.name}</span><span style={{color:"#40d9c4",fontWeight:"bold"}}>{dp} DP</span></div>
           <div style={{fontSize:10,color:"#607890",marginTop:2}}>LS{p.colony.ls.filter(Boolean).length}/6 AG{p.colony.ag.filter(Boolean).length}/4 RE{p.colony.re.filter(Boolean).length}/3 · 🏆×{p.roundWins||0}</div>
           <ColonyDisplay player={p}/>
@@ -947,7 +975,7 @@ function App(){
     </div>;
   }
 
-  const{phase,round,sunPos,vit,players,draft,draftIdx,draftOrder,engIdx,tradePile,event,efx,meteorHit,eventDrawn,meteorResolved,harvestResults,harvestLeaders,shipResult,contribs,contribIdx,contribsRevealed,selCard,log}=state;
+  const{phase,round,sunPos,vit,players,draft,draftIdx,draftOrder,engIdx,tradePile,event,efx,meteorHit,eventDrawn,meteorResolved,harvestResults,harvestLeaders,shipResult,contribs,contribIdx,contribsRevealed,selCard,log,tiebreak}=state;
   const demand=DEMAND[round]||{g:0,gr:0,ex:0};
   const adjDem={g:demand.g+(efx.demG||0),gr:demand.gr,ex:efx.demExDouble?demand.ex*2:demand.ex};
   let activeIdx=null;
@@ -978,6 +1006,7 @@ function App(){
         {/* EVENT */}
         {phase==="event"&&<div style={P}>
           <div style={H2}>Round {round} — Sun & Event</div>
+          {tiebreak&&<div style={{...P,border:"1px solid #a16207",marginBottom:10,color:"#fde047",fontSize:11}}>🏆 Tiebreak round — {tiebreak.contenders.join(" & ")} tied. Whoever harvests the most this round wins outright; still tied after this and it's a true draw.</div>}
           <div style={{marginBottom:12}}>
             {!eventDrawn?<div style={{...P,textAlign:"center",padding:22}}>
               <div style={{color:"#607890",fontSize:12,marginBottom:12}}>This round's Event Card hasn't been drawn yet.</div>
