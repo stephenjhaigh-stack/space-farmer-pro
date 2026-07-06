@@ -497,6 +497,7 @@ function VolumeControl({volume,muted,onVolume,onMute,dark}){
 // ── Loading / intro screen ───────────────────────────────────
 function LoadingScreen({onBegin,volume,muted,onVolume,onMute,onUnlockAudio}){
   const[slid,setSlid]=useState(false);
+  const[engaged,setEngaged]=useState(false);
   useEffect(()=>{
     // inject the pixel font once, self-contained (no reliance on host index.html)
     if(!document.getElementById("sfp-pixel-font")){
@@ -515,6 +516,8 @@ function LoadingScreen({onBegin,volume,muted,onVolume,onMute,onUnlockAudio}){
         @keyframes sfp-flame{0%{opacity:1;}100%{opacity:0.4;}}
         @keyframes sfp-blink{0%,100%{opacity:1;}50%{opacity:0.2;}}
         @keyframes sfp-stars{from{background-position:0 0;}to{background-position:0 -1000px;}}
+        @keyframes sfp-shipdrop{from{transform:translateY(-160px);opacity:0;}to{transform:translateY(0);opacity:1;}}
+        @keyframes sfp-fadein{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
         button:active{transform:translate(2px,2px);box-shadow:none!important;}
         ::selection{background:#0d9488;color:#02040a;}
         :root{--sfp-cursor:${CURSOR_HAND};}
@@ -531,8 +534,9 @@ function LoadingScreen({onBegin,volume,muted,onVolume,onMute,onUnlockAudio}){
     backgroundImage:"radial-gradient(1px 1px at 20px 30px,#fff,transparent),radial-gradient(1px 1px at 90px 120px,#fff,transparent),radial-gradient(1.5px 1.5px at 160px 60px,#fde047,transparent),radial-gradient(1px 1px at 210px 200px,#fff,transparent),radial-gradient(1px 1px at 55px 190px,#fff,transparent),radial-gradient(1.5px 1.5px at 260px 40px,#60a5fa,transparent)",
     backgroundSize:"300px 300px",backgroundRepeat:"repeat",animation:"sfp-stars 40s linear infinite",
   };
+  const engage=()=>{if(!engaged){onUnlockAudio();setEngaged(true);}};
   return(
-    <div onClick={onUnlockAudio} style={{
+    <div onClick={engage} style={{
       position:"fixed",inset:0,background:"#02040a",display:"flex",flexDirection:"column",
       alignItems:"center",justifyContent:"center",transform:"translateY(-100%)",
       animation:slid?"sfp-slidedown 800ms cubic-bezier(.2,.7,.3,1) forwards":undefined,
@@ -544,14 +548,17 @@ function LoadingScreen({onBegin,volume,muted,onVolume,onMute,onUnlockAudio}){
       </div>
       <div style={{position:"relative",textAlign:"center"}}>
         <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:22,color:"#40d9c4",letterSpacing:2,textShadow:"3px 3px 0 #134e4a",marginBottom:8}}>SPACE</div>
-        <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:22,color:"#fde047",letterSpacing:2,textShadow:"3px 3px 0 #a16207",marginBottom:28}}>FARMER PRO</div>
-        <div style={{marginBottom:28}}><PixelShip/></div>
-        <button onClick={onBegin} style={{
-          fontFamily:"'Press Start 2P',monospace",fontSize:13,color:"#99f6e4",background:"#134e4a",
-          border:"2px solid #0d9488",borderRadius:2,padding:"14px 22px",cursor:"pointer",
-          animation:"sfp-blink 1.6s ease-in-out infinite",letterSpacing:1,
-        }}>▶ BEGIN MISSION</button>
-        <div style={{color:"#374151",fontSize:11,marginTop:16}}>Earth is dying. You are its last hope.</div>
+        <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:22,color:"#fde047",letterSpacing:2,textShadow:"3px 3px 0 #a16207",marginBottom:engaged?28:8}}>FARMER PRO</div>
+        {!engaged&&<div style={{fontFamily:"'Press Start 2P',monospace",fontSize:11,color:"#40d9c4",letterSpacing:1,marginTop:20,animation:"sfp-blink 1.4s ease-in-out infinite"}}>▶ CLICK TO START</div>}
+        {engaged&&<>
+          <div style={{marginBottom:28,animation:"sfp-shipdrop 550ms cubic-bezier(.2,.7,.3,1) both"}}><PixelShip/></div>
+          <button onClick={onBegin} style={{
+            fontFamily:"'Press Start 2P',monospace",fontSize:13,color:"#99f6e4",background:"#134e4a",
+            border:"2px solid #0d9488",borderRadius:2,padding:"14px 22px",cursor:"pointer",
+            animation:"sfp-blink 1.6s ease-in-out infinite",letterSpacing:1,
+          }}>▶ BEGIN MISSION</button>
+          <div style={{color:"#374151",fontSize:11,marginTop:16,animation:"sfp-fadein 500ms ease-out both"}}>Earth is dying. You are its last hope.</div>
+        </>}
       </div>
     </div>
   );
