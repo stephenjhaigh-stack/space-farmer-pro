@@ -498,6 +498,7 @@ function VolumeControl({volume,muted,onVolume,onMute,dark}){
 function LoadingScreen({onBegin,volume,muted,onVolume,onMute,onUnlockAudio}){
   const[slid,setSlid]=useState(false);
   const[engaged,setEngaged]=useState(false);
+  const[landed,setLanded]=useState(false);
   useEffect(()=>{
     // inject the pixel font once, self-contained (no reliance on host index.html)
     if(!document.getElementById("sfp-pixel-font")){
@@ -534,7 +535,7 @@ function LoadingScreen({onBegin,volume,muted,onVolume,onMute,onUnlockAudio}){
     backgroundImage:"radial-gradient(1px 1px at 20px 30px,#fff,transparent),radial-gradient(1px 1px at 90px 120px,#fff,transparent),radial-gradient(1.5px 1.5px at 160px 60px,#fde047,transparent),radial-gradient(1px 1px at 210px 200px,#fff,transparent),radial-gradient(1px 1px at 55px 190px,#fff,transparent),radial-gradient(1.5px 1.5px at 260px 40px,#60a5fa,transparent)",
     backgroundSize:"300px 300px",backgroundRepeat:"repeat",animation:"sfp-stars 40s linear infinite",
   };
-  const engage=()=>{if(!engaged){onUnlockAudio();setEngaged(true);}};
+  const engage=()=>{if(!engaged){onUnlockAudio();setEngaged(true);setTimeout(()=>setLanded(true),3000);}};
   return(
     <div onClick={engage} style={{
       position:"fixed",inset:0,background:"#02040a",display:"flex",flexDirection:"column",
@@ -550,8 +551,8 @@ function LoadingScreen({onBegin,volume,muted,onVolume,onMute,onUnlockAudio}){
         <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:22,color:"#40d9c4",letterSpacing:2,textShadow:"3px 3px 0 #134e4a",marginBottom:8}}>SPACE</div>
         <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:22,color:"#fde047",letterSpacing:2,textShadow:"3px 3px 0 #a16207",marginBottom:engaged?28:8}}>FARMER PRO</div>
         {!engaged&&<div style={{fontFamily:"'Press Start 2P',monospace",fontSize:11,color:"#40d9c4",letterSpacing:1,marginTop:20,animation:"sfp-blink 1.4s ease-in-out infinite"}}>▶ CLICK TO START</div>}
-        {engaged&&<>
-          <div style={{marginBottom:28,animation:"sfp-shipdrop 550ms cubic-bezier(.2,.7,.3,1) both"}}><PixelShip/></div>
+        {engaged&&<div style={{marginBottom:28,animation:"sfp-shipdrop 3000ms cubic-bezier(.2,.7,.3,1) both"}}><PixelShip/></div>}
+        {landed&&<>
           <button onClick={onBegin} style={{
             fontFamily:"'Press Start 2P',monospace",fontSize:13,color:"#99f6e4",background:"#134e4a",
             border:"2px solid #0d9488",borderRadius:2,padding:"14px 22px",cursor:"pointer",
