@@ -155,12 +155,12 @@ function makeState(names){
       colony:{ls:[null,null,null,null,null,null],ag:[null,null,null,null],re:[null,null,null],agriWater:null},
       stockpile:{g:0,gr:0,ex:0},hand:[],roundWins:0})),
     seedDeck:makeSeeds(),hwDeck:makeHW(),evDeck:makeEvents(),
-    draft:[],draftOrder:names.map((_,i)=>i),draftIdx:0,passStreak:0,
+    draft:[],draftOrder:names.map((_,i)=>i),draftIdx:0,passStreak:0,tradePile:[],
     event:null,efx:blankEfx(),meteorHit:null,eventDrawn:false,meteorResolved:false,
     harvestResults:null,shipResult:null,harvestLeaders:[],outcome:null,
     contribs:names.map((_,id)=>({id,ship:{g:0,gr:0,ex:0},invest:{g:0,gr:0,ex:0},done:false})),
     contribIdx:0,contribsRevealed:false,
-    engIdx:0,tradeIdx:0,selCard:null,
+    engIdx:0,selCard:null,
     log:["Mission launched."],gameoverMsg:null,winner:null,gameStarted:false,
   };
 }
@@ -233,34 +233,49 @@ function reducer(s,a){
     const usedS=new Set(seedsPicked.map(c=>c.id));
     const usedH=new Set(avHW.map(c=>c.id));
     // Nobody chooses which card they get — Earth hands them out at random. Card count
-    // per player stays fair (each player gets floor/ceil(picked/n) cards), but WHICH
-    // specific cards land on WHICH player is a free random pairing — it's entirely
-    // possible for one player to get all the crops and another all the machines. That
-    // lopsidedness is deliberate: it's what makes the Trade phase afterward matter.
-    const recipients=shuf(picked.map((_,i)=>s.draftOrder[i%s.draftOrder.length]));
+    // per player stays fair (each player gets floor/ceil(picked/n) cards) — and when the
+    // total doesn't divide evenly, WHO gets the leftover extra card(s) is itself randomized
+    // per round, not always the same seat. (Building the recipient list via draftOrder[i%n]
+    // and merely shuffling its ORDER does NOT achieve this — the count of each player index
+    // in that list is fixed by construction, so draftOrder[0] would win every single odd
+    // round. The fix picks the "gets +1" players randomly first, then fills counts.)
+    const dOrd=s.draftOrder,dn=dOrd.length;
+    const base=Math.floor(picked.length/dn),rem=picked.length%dn;
+    const extraSet=new Set(shuf(dOrd).slice(0,rem));
+    let recipients=[];
+    dOrd.forEach(pi=>{for(let k=0;k<base+(extraSet.has(pi)?1:0);k++)recipients.push(pi);});
+    recipients=shuf(recipients);
     let players=s.players;
     picked.forEach((card,i)=>{
       const pi=recipients[i];
       players=players.map((p,idx)=>idx!==pi?p:{...p,hand:[...p.hand,card]});
     });
     return{...s,players,draft:[],seedDeck:sd.filter(c=>!usedS.has(c.id)),hwDeck:hd.filter(c=>!usedH.has(c.id)),draftIdx:0,passStreak:0,
-      phase:s.efx.embargo?"engineering":"trade",tradeIdx:0,engIdx:0,log:alog(s.log,`Draft: ${picked.length} cards dealt at random.`)};
+      phase:s.efx.embargo?"engineering":"trade",engIdx:0,tradePile:[],log:alog(s.log,`Draft: ${picked.length} cards dealt at random.`)};
   }
-  case"TRADE_SEND":{
+  case"TRADE_OFFER":{
     if(s.efx.embargo)return s;
-    const fromIdx=s.tradeIdx,toIdx=a.toIdx;
+    const fromIdx=a.fromIdx,toIdx=a.toIdx;
     if(fromIdx==null||toIdx==null||fromIdx===toIdx)return s;
-    const from=s.players[fromIdx],to=s.players[toIdx];if(!from||!to)return s;
+    const from=s.players[fromIdx];if(!from)return s;
     const card=from.hand.find(c=>c.id===a.cardId);if(!card)return s;
-    const players=s.players.map((p,i)=>{
-      if(i===fromIdx)return{...p,hand:p.hand.filter(c=>c.id!==card.id)};
-      if(i===toIdx)return{...p,hand:[...p.hand,card]};
-      return p;
-    });
-    return{...s,players,log:alog(s.log,`${from.name}→${to.name}: ${card.name}`)};
+    const players=s.players.map((p,i)=>i!==fromIdx?p:{...p,hand:p.hand.filter(c=>c.id!==card.id)});
+    const tradePile=[...(s.tradePile||[]),{id:card.id,fromIdx,toIdx,card}];
+    return{...s,players,tradePile};
   }
-  case"NEXT_TRADE":{const next=s.tradeIdx+1;if(next>=s.players.length)return{...s,phase:"engineering",engIdx:0,tradeIdx:0};return{...s,tradeIdx:next};}
-  case"SKIP_TRADE":return{...s,phase:"engineering",engIdx:0,tradeIdx:0};
+  case"TRADE_RETRACT":{
+    const entry=(s.tradePile||[]).find(o=>o.id===a.cardId);if(!entry)return s;
+    const tradePile=s.tradePile.filter(o=>o.id!==a.cardId);
+    const players=s.players.map((p,i)=>i!==entry.fromIdx?p:{...p,hand:[...p.hand,entry.card]});
+    return{...s,players,tradePile};
+  }
+  case"TRADE_INITIATE":{
+    const pile=s.tradePile||[];
+    let players=s.players;
+    pile.forEach(o=>{players=players.map((p,i)=>i!==o.toIdx?p:{...p,hand:[...p.hand,o.card]});});
+    const log=pile.length?alog(s.log,`Trade finalized: ${pile.map(o=>`${s.players[o.fromIdx].name}→${s.players[o.toIdx].name} ${o.card.name}`).join(", ")}`):s.log;
+    return{...s,players,tradePile:[],phase:"engineering",engIdx:0,log};
+  }
   case"SEL_CARD":return{...s,selCard:s.selCard&&s.selCard.id===a.card.id?null:a.card};
   case"PLACE":{
     const pi=s.engIdx,card=s.selCard;if(!card)return s;
@@ -276,6 +291,17 @@ function reducer(s,a){
     if(!isHW&&(tile.c.dormant||0)>0)return s;
     const players=s.players.map((p,i)=>i!==pi?p:{...p,hand:[...p.hand,tile.c.card],grid:p.grid.map(t=>t.id===a.tileId?{...t,c:null}:t)});
     return{...s,players,selCard:null};
+  }
+  case"SWAP":{
+    const pi=s.engIdx,card=s.selCard;if(!card)return s;
+    const tile=s.players[pi].grid.find(t=>t.id===a.tileId);if(!tile||!tile.c||tile.dmg>0)return s;
+    const isHW=tile.c.t==="hw";
+    if(!isHW&&(tile.c.dormant||0)>0)return s;
+    const oldCard=tile.c.card;
+    const dirs=card.hwt==="uMirror"?["up","right"]:["up"];
+    const c=card.t==="seed"?{t:"seed",card,dormant:0}:{t:"hw",card,dirs};
+    const players=s.players.map((p,i)=>i!==pi?p:{...p,hand:[...p.hand.filter(h=>h.id!==card.id),oldCard],grid:p.grid.map(t=>t.id===a.tileId?{...t,c}:t)});
+    return{...s,players,selCard:null,log:alog(s.log,`${s.players[pi].name}:${oldCard.name}↔${card.name} T${a.tileId}`)};
   }
   case"SET_DIR":{
     const pi=s.engIdx;
@@ -335,7 +361,7 @@ function reducer(s,a){
     if(s.round>=6){const sc=s.players.map(p=>({name:p.name,dp:calcDP(p,s.vit)})).sort((a,b)=>b.dp-a.dp);return{...s,phase:"gameover",outcome:"earthsaved",gameoverMsg:`Game over! ${sc.map(x=>`${x.name}: ${x.dp}DP`).join(" · ")}`,winner:sc[0].name};}
     const leaders=s.harvestLeaders||[];
     const rest=s.players.map((_,i)=>i).filter(i=>!leaders.includes(i));
-    return startRound({...s,round:s.round+1,contribIdx:0,contribsRevealed:false,selCard:null,engIdx:0,tradeIdx:0,draftOrder:[...leaders,...rest],contribs:s.players.map(p=>({id:p.id,ship:{g:0,gr:0,ex:0},invest:{g:0,gr:0,ex:0},done:false}))});
+    return startRound({...s,round:s.round+1,contribIdx:0,contribsRevealed:false,selCard:null,engIdx:0,draftOrder:[...leaders,...rest],contribs:s.players.map(p=>({id:p.id,ship:{g:0,gr:0,ex:0},invest:{g:0,gr:0,ex:0},done:false}))});
   }
   // Wholesale replace — used when a Firestore snapshot arrives from a remote peer.
   // Not something a player triggers; it's how the two browsers stay in sync.
@@ -562,7 +588,7 @@ function MeteorReveal({meteorHit,meteorResolved,players}){
     {stage==="done"&&<div style={{fontSize:10,color:"#f87171",marginTop:4}}>{meteorHit?(meteorHit.had?"Contents destroyed. ":"Was empty. ")+"Zone blocked 3 rounds.":"Roll of 10 — miss, no effect."}</div>}
   </div>;
 }
-function PGrid({player,sunPos,efx,isActive,selCard,onPlace,onLift,onSetDir}){
+function PGrid({player,sunPos,efx,isActive,selCard,onPlace,onLift,onSwap,onSetDir}){
   const tv=useMemo(()=>computeTiles(player,sunPos,efx||{}),[player,sunPos,efx]);
   const sun=SUN[sunPos%4];
   const[hoverId,setHoverId]=useState(null);
@@ -573,10 +599,11 @@ function PGrid({player,sunPos,efx,isActive,selCard,onPlace,onLift,onSetDir}){
         const{l,w}=tv[tile.id];const dmg=tile.dmg>0;
         const sT=sun.core.includes(tile.id)?"core":sun.edge.includes(tile.id)?"edge":"shadow";
         const bg=dmg?"rgba(127,29,29,0.3)":sT==="core"?"rgba(120,80,0,0.15)":sT==="edge"?"rgba(20,28,45,0.9)":"rgba(8,12,20,0.9)";
-        const bc=dmg?"#7f1d1d":isActive&&selCard&&!tile.c&&!dmg?"#0d9488":"#1e2d3d";
         const canLift=tile.c&&!dmg&&(tile.c.t==="hw"||(tile.c.dormant||0)===0);
+        const canSwap=isActive&&selCard&&canLift;
+        const bc=dmg?"#7f1d1d":isActive&&selCard&&!tile.c&&!dmg?"#0d9488":canSwap?"#a16207":"#1e2d3d";
         const clickable=isActive&&((selCard&&!tile.c&&!dmg)||canLift);
-        return <div key={tile.id} onClick={()=>{if(!isActive)return;if(selCard&&!tile.c&&!dmg)onPlace(tile.id);else if(canLift)onLift(tile.id);}}
+        return <div key={tile.id} onClick={()=>{if(!isActive)return;if(selCard&&!tile.c&&!dmg)onPlace(tile.id);else if(selCard&&canLift)onSwap(tile.id);else if(canLift)onLift(tile.id);}}
           onMouseEnter={()=>setHoverId(tile.id)} onMouseLeave={()=>setHoverId(null)}
           style={{background:bg,border:`1px solid ${bc}`,borderRadius:2,padding:"3px 4px",minHeight:60,cursor:clickable?"pointer":"default",position:"relative",boxSizing:"border-box"}}>
           <div style={{fontSize:9,color:"#374151"}}>{tile.id}</div>
@@ -659,27 +686,26 @@ function Chip({card,sel,onClick}){
   </HoverTip>;
 }
 
-function TradeForm({player,others,onSend}){
+function PlayerTradeHand({player,others,interactive,onOffer}){
   const[toIdx,setToIdx]=useState(others[0]?others[0].idx:null);
   const toName=others.find(o=>o.idx===toIdx)?.name||"";
-  return <div style={{...P,marginTop:8}}>
-    <div style={{fontSize:12,color:"#c0ccdd",marginBottom:8}}>Tap a card below to send it — that's the whole action, nothing to drag.</div>
-    {others.length>1&&<div style={{display:"flex",gap:8,marginBottom:10,flexWrap:"wrap"}}>
-      {others.map(o=><button key={o.idx} onClick={()=>setToIdx(o.idx)} style={{...BTN2,fontSize:11,padding:"9px 14px",background:toIdx===o.idx?"#134e4a":"#0a0f1c",color:toIdx===o.idx?"#40d9c4":"#607890"}}>→ {o.name}</button>)}
+  return <div style={{...P,padding:8}}>
+    <div style={{fontSize:11,fontWeight:"bold",color:interactive?"#40d9c4":"#607890",marginBottom:6}}>{player.name}{!interactive?" (view only)":""}</div>
+    {interactive&&others.length>1&&<div style={{display:"flex",gap:5,marginBottom:8,flexWrap:"wrap"}}>
+      {others.map(o=><button key={o.idx} onClick={()=>setToIdx(o.idx)} style={{...BTN2,fontSize:9,padding:"6px 9px",background:toIdx===o.idx?"#134e4a":"#0a0f1c",color:toIdx===o.idx?"#40d9c4":"#607890"}}>→ {o.name}</button>)}
     </div>}
-    {player.hand.length?<div style={{display:"flex",flexDirection:"column",gap:8}}>
+    {player.hand.length?<div style={{display:"flex",flexDirection:"column",gap:6}}>
       {player.hand.map(c=>{
         const isSeed=c.t==="seed";
         const border=isSeed?CC[c.crop]:"#1e3a5a";
         const bg=isSeed?(c.crop==="g"?"rgba(0,50,25,0.9)":c.crop==="gr"?"rgba(50,38,0,0.9)":"rgba(35,8,55,0.9)"):"rgba(0,20,50,0.9)";
-        return <button key={c.id} onClick={()=>toIdx!=null&&onSend(toIdx,c.id)}
-          style={{display:"block",width:"100%",textAlign:"left",background:bg,border:`2px solid ${border}`,borderRadius:4,padding:"14px 16px",cursor:"pointer"}}>
-          <div style={{fontSize:15,fontWeight:"bold",color:isSeed?CC[c.crop]:"#93c5fd"}}>{c.name}</div>
-          <div style={{fontSize:11,color:"#607890",marginTop:3}}>{isSeed?`Needs L${c.lr} W${c.wr} → yields ${c.yld}`:c.desc}</div>
-          <div style={{fontSize:11,color:"#40d9c4",marginTop:6}}>🤝 Tap to send to {toName}</div>
+        return <button key={c.id} disabled={!interactive} onClick={()=>interactive&&toIdx!=null&&onOffer(toIdx,c.id)}
+          style={{display:"block",width:"100%",textAlign:"left",background:bg,border:`2px solid ${border}`,borderRadius:4,padding:"9px 11px",cursor:interactive?"pointer":"default",opacity:interactive?1:0.65}}>
+          <div style={{fontSize:12,fontWeight:"bold",color:isSeed?CC[c.crop]:"#93c5fd"}}>{c.name}</div>
+          {interactive&&<div style={{fontSize:10,color:"#40d9c4",marginTop:3}}>🤝 Tap to offer to {toName}</div>}
         </button>;
       })}
-    </div>:<div style={{color:"#374151",fontSize:11}}>Your hand is empty.</div>}
+    </div>:<div style={{color:"#374151",fontSize:10}}>Empty</div>}
   </div>;
 }
 function ContribForm({player,onSubmit}){
@@ -921,12 +947,11 @@ function App(){
     </div>;
   }
 
-  const{phase,round,sunPos,vit,players,draft,draftIdx,draftOrder,engIdx,tradeIdx,event,efx,meteorHit,eventDrawn,meteorResolved,harvestResults,harvestLeaders,shipResult,contribs,contribIdx,contribsRevealed,selCard,log}=state;
+  const{phase,round,sunPos,vit,players,draft,draftIdx,draftOrder,engIdx,tradePile,event,efx,meteorHit,eventDrawn,meteorResolved,harvestResults,harvestLeaders,shipResult,contribs,contribIdx,contribsRevealed,selCard,log}=state;
   const demand=DEMAND[round]||{g:0,gr:0,ex:0};
   const adjDem={g:demand.g+(efx.demG||0),gr:demand.gr,ex:efx.demExDouble?demand.ex*2:demand.ex};
   let activeIdx=null;
-  if(phase==="trade"&&tradeIdx<players.length)activeIdx=tradeIdx;
-  else if(phase==="engineering"&&engIdx<players.length)activeIdx=engIdx;
+  if(phase==="engineering"&&engIdx<players.length)activeIdx=engIdx;
   else if(phase==="contribute"&&!contribsRevealed&&contribIdx<players.length)activeIdx=contribIdx;
   const remoteMode=connectMode==="online";
   const isMyTurn=!remoteMode||activeIdx===null||activeIdx===mySeat;
@@ -971,7 +996,7 @@ function App(){
           {eventDrawn&&(!event||event.et!=="meteor"||meteorResolved)&&<>
             <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(players.length,4)},1fr)`,gap:8,marginBottom:12}}>
               {players.map(p=><div key={p.id} style={{...P,padding:8}}>
-                <PGrid player={p} sunPos={sunPos} efx={efx} isActive={false} selCard={null} onPlace={()=>{}} onLift={()=>{}} onSetDir={()=>{}}/>
+                <PGrid player={p} sunPos={sunPos} efx={efx} isActive={false} selCard={null} onPlace={()=>{}} onLift={()=>{}} onSwap={()=>{}} onSetDir={()=>{}}/>
                 <div style={{fontSize:9,color:"#607890",marginTop:3}}>G{p.stockpile.g} Gr{p.stockpile.gr} Ex{p.stockpile.ex}</div>
               </div>)}
             </div>
@@ -981,23 +1006,24 @@ function App(){
 
         {/* TRADE */}
         {phase==="trade"&&<div style={P}>
-          <div style={H2}>Trading — {players[tradeIdx]?.name}</div>
-          <div style={{fontSize:11,color:"#607890",marginBottom:10}}>{efx.embargo?"🚫 Embargo — no trades.":"Swap the cards Earth randomly dealt you before you commit to Engineering."}</div>
-          <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(players.length,4)},1fr)`,gap:6,marginBottom:10}}>
-            {players.map((p,i)=><div key={p.id} style={{...P,border:`1px solid ${i===tradeIdx?"#0d9488":"#1e2d3d"}`,padding:8}}>
-              <div style={{fontSize:10,fontWeight:"bold",color:i===tradeIdx?"#40d9c4":"#607890",marginBottom:3}}>{p.name}</div>
-              <div style={{display:"flex",flexWrap:"wrap",gap:3}}>{p.hand.map(c=><div key={c.id} style={{fontSize:9,color:c.t==="seed"?CC[c.crop]:"#93c5fd",background:"#0a0f1c",border:"1px solid #1e2d3d",borderRadius:2,padding:"1px 4px"}}>{c.name}</div>)}{!p.hand.length&&<span style={{fontSize:9,color:"#374151"}}>—</span>}</div>
-            </div>)}
+          <div style={H2}>Trading Window</div>
+          <div style={{fontSize:11,color:"#607890",marginBottom:10}}>Offer cards you're willing to trade to the pile below, naming who they're for. Once everyone's happy, hit Initiate Trade to swap everything at once.</div>
+          <div style={{...P,border:"1px solid #a16207",marginBottom:10}}>
+            <div style={{fontSize:10,color:"#facc15",fontWeight:"bold",marginBottom:6}}>🔄 TRADE PILE {tradePile.length?`(${tradePile.length})`:""}</div>
+            {tradePile.length?<div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {tradePile.map(o=><div key={o.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,background:"rgba(0,0,0,0.3)",borderRadius:2,padding:"6px 10px"}}>
+                <div style={{fontSize:11,color:"#c0ccdd"}}><span style={{color:"#40d9c4"}}>{players[o.fromIdx]?.name}</span> → <span style={{color:"#facc15"}}>{players[o.toIdx]?.name}</span>: <b>{o.card.name}</b></div>
+                {(!remoteMode||o.fromIdx===mySeat)&&<button onClick={()=>D({type:"TRADE_RETRACT",cardId:o.id})} style={{...BTN2,fontSize:9,padding:"4px 8px"}}>↩ Retract</button>}
+              </div>)}
+            </div>:<div style={{fontSize:10,color:"#374151"}}>Nobody's offered anything yet.</div>}
           </div>
-          {remoteMode&&!isMyTurn?<Waiting label={players[tradeIdx]?.name}/>:<>
-            {!efx.embargo&&players[tradeIdx]&&<TradeForm key={tradeIdx} player={players[tradeIdx]}
-              others={players.map((p,i)=>({idx:i,name:p.name})).filter(o=>o.idx!==tradeIdx)}
-              onSend={(toIdx,cardId)=>D({type:"TRADE_SEND",toIdx,cardId})}/>}
-            <div style={{display:"flex",gap:8,marginTop:10}}>
-              <button onClick={()=>D({type:"NEXT_TRADE"})} style={BTN}>{tradeIdx+1>=players.length?"Done →":"Next Player"}</button>
-              <button onClick={()=>D({type:"SKIP_TRADE"})} style={BTN2}>Skip all</button>
-            </div>
-          </>}
+          {efx.embargo?<div style={{fontSize:11,color:"#f87171",marginBottom:10}}>🚫 Trade Embargo — no trades this round.</div>:
+          <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(players.length,4)},1fr)`,gap:8,marginBottom:10}}>
+            {players.map((p,i)=><PlayerTradeHand key={p.id} player={p} interactive={!remoteMode||i===mySeat}
+              others={players.map((pp,ii)=>({idx:ii,name:pp.name})).filter(o=>o.idx!==i)}
+              onOffer={(toIdx,cardId)=>D({type:"TRADE_OFFER",fromIdx:i,toIdx,cardId})}/>)}
+          </div>}
+          <button onClick={()=>D({type:"TRADE_INITIATE"})} style={BTN}>{tradePile.length?`🤝 Initiate Trade (${tradePile.length})`:"→ Continue (no trades)"}</button>
         </div>}
 
         {/* ENGINEERING */}
@@ -1012,7 +1038,7 @@ function App(){
                 <div style={{...LBL,marginBottom:4}}>Hand ({p?.hand.length}) {selCard&&<span style={{color:"#40d9c4"}}> — {selCard.name}</span>}</div>
                 <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:10,minHeight:30}}>{p?.hand.map(c=><Chip key={c.id} card={c} sel={selCard&&selCard.id===c.id} onClick={()=>D({type:"SEL_CARD",card:c})}/>)}</div>
                 <PGrid player={p} sunPos={sunPos} efx={efx} isActive={true} selCard={selCard}
-                  onPlace={tid=>D({type:"PLACE",tileId:tid})} onLift={tid=>D({type:"LIFT",tileId:tid})} onSetDir={(tid,dirs)=>D({type:"SET_DIR",tileId:tid,dirs})}/>
+                  onPlace={tid=>D({type:"PLACE",tileId:tid})} onLift={tid=>D({type:"LIFT",tileId:tid})} onSwap={tid=>D({type:"SWAP",tileId:tid})} onSetDir={(tid,dirs)=>D({type:"SET_DIR",tileId:tid,dirs})}/>
                 {p&&p.colony.ag.filter(Boolean).length>=2&&p.colony.agriWater&&
                   <div style={{marginTop:6,fontSize:10,color:"#60a5fa"}}>★ +1W bonus tile:
                     <select value={p.colony.agriWater} onChange={e=>D({type:"SET_AGRI_WATER",pid:p.id,tid:+e.target.value})}
@@ -1071,6 +1097,14 @@ function App(){
         {phase==="contribute"&&<div style={P}>
           <div style={H2}>Phase V — Contribute to Earth</div>
           <div style={{fontSize:10,color:"#607890",marginBottom:8}}>Need: <span style={{color:"#4ade80"}}>G{adjDem.g}</span> <span style={{color:"#facc15"}}>Gr{adjDem.gr}</span> <span style={{color:"#c084fc"}}>Ex{adjDem.ex}</span> — each player allocates secretly.</div>
+          <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(players.length,4)},1fr)`,gap:6,marginBottom:10}}>
+            {players.map(p=><div key={p.id} style={{...P,padding:8}}>
+              <div style={{fontSize:10,fontWeight:"bold",color:"#607890",marginBottom:3}}>{p.name} — total harvest</div>
+              <span style={{color:"#4ade80",fontSize:11}}>G{p.stockpile.g} </span>
+              <span style={{color:"#facc15",fontSize:11}}>Gr{p.stockpile.gr} </span>
+              <span style={{color:"#c084fc",fontSize:11}}>Ex{p.stockpile.ex}</span>
+            </div>)}
+          </div>
           {!contribsRevealed?<>
             {remoteMode?(
               contribs[mySeat]&&!contribs[mySeat].done?

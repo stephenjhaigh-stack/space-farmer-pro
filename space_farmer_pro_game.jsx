@@ -149,7 +149,7 @@ function makeState(names) {
     harvestResults:null, shipResult:null, harvestLeaders:[], outcome:null,
     contribs:names.map((_,id)=>({id,ship:{g:0,gr:0,ex:0},invest:{g:0,gr:0,ex:0},done:false})),
     contribIdx:0, contribsRevealed:false,
-    engIdx:0, tradeIdx:0, selCard:null,
+    engIdx:0, tradePile:[], selCard:null,
     log:["Mission started. Round 1 begins."],
     gameStarted: false,
   };
@@ -256,42 +256,56 @@ function reducer(s, a) {
     const usedS=new Set(seedsPicked.map(c=>c.id));
     const usedH=new Set(avHW.map(c=>c.id));
     // Nobody chooses which card they get — Earth hands them out at random. Card count
-    // per player stays fair (each player gets floor/ceil(picked/n) cards), but WHICH
-    // specific cards land on WHICH player is a free random pairing — it's entirely
-    // possible for one player to get all the crops and another all the machines. That
-    // lopsidedness is deliberate: it's what makes the Trade phase afterward matter.
-    const recipients=shuf(picked.map((_,i)=>s.draftOrder[i%s.draftOrder.length]));
+    // per player stays fair (each player gets floor/ceil(picked/n) cards) — and when the
+    // total doesn't divide evenly, WHO gets the leftover extra card(s) is itself randomized
+    // per round, not always the same seat. (Building the recipient list via draftOrder[i%n]
+    // and merely shuffling its ORDER does NOT achieve this — the count of each player index
+    // in that list is fixed by construction, so draftOrder[0] would win every single odd
+    // round. The fix picks the "gets +1" players randomly first, then fills counts.)
+    const dOrd=s.draftOrder, dn=dOrd.length;
+    const base=Math.floor(picked.length/dn), rem=picked.length%dn;
+    const extraSet=new Set(shuf(dOrd).slice(0,rem));
+    let recipients=[];
+    dOrd.forEach(pi=>{for(let k=0;k<base+(extraSet.has(pi)?1:0);k++) recipients.push(pi);});
+    recipients=shuf(recipients);
     let players=s.players;
     picked.forEach((card,i)=>{
       const pi=recipients[i];
       players=players.map((p,idx)=>idx!==pi?p:{...p,hand:[...p.hand,card]});
     });
     return{...s,players,draft:[],seedDeck:sd.filter(c=>!usedS.has(c.id)),hwDeck:hd.filter(c=>!usedH.has(c.id)),
-      draftIdx:0,passStreak:0,phase:s.efx.embargo?"engineering":"trade",tradeIdx:0,engIdx:0,
+      draftIdx:0,passStreak:0,phase:s.efx.embargo?"engineering":"trade",engIdx:0,tradePile:[],
       log:appendLog(s.log,`Draft: ${picked.length} cards dealt at random.`)};
   }
 
-  case "TRADE_SEND": {
+  case "TRADE_OFFER": {
     if(s.efx.embargo) return s;
-    const fromIdx=s.tradeIdx, toIdx=a.toIdx;
+    const fromIdx=a.fromIdx, toIdx=a.toIdx;
     if(fromIdx==null||toIdx==null||fromIdx===toIdx) return s;
-    const from=s.players[fromIdx], to=s.players[toIdx];
-    if(!from||!to) return s;
+    const from=s.players[fromIdx];
+    if(!from) return s;
     const card=from.hand.find(c=>c.id===a.cardId);
     if(!card) return s;
-    const players=s.players.map((p,i)=>{
-      if(i===fromIdx) return{...p,hand:p.hand.filter(c=>c.id!==card.id)};
-      if(i===toIdx) return{...p,hand:[...p.hand,card]};
-      return p;
-    });
-    return{...s,players,log:appendLog(s.log,`${from.name}→${to.name}: ${card.name}`)};
+    const players=s.players.map((p,i)=>i!==fromIdx?p:{...p,hand:p.hand.filter(c=>c.id!==card.id)});
+    const tradePile=[...(s.tradePile||[]),{id:card.id,fromIdx,toIdx,card}];
+    return{...s,players,tradePile};
   }
-  case "NEXT_TRADE": {
-    const next=s.tradeIdx+1;
-    if(next>=s.players.length) return{...s,phase:"engineering",engIdx:0,tradeIdx:0};
-    return{...s,tradeIdx:next};
+  case "TRADE_RETRACT": {
+    const entry=(s.tradePile||[]).find(o=>o.id===a.cardId);
+    if(!entry) return s;
+    const tradePile=s.tradePile.filter(o=>o.id!==a.cardId);
+    const players=s.players.map((p,i)=>i!==entry.fromIdx?p:{...p,hand:[...p.hand,entry.card]});
+    return{...s,players,tradePile};
   }
-  case "SKIP_TRADE": return{...s,phase:"engineering",engIdx:0,tradeIdx:0};
+  case "TRADE_INITIATE": {
+    const pile=s.tradePile||[];
+    let players=s.players;
+    pile.forEach(o=>{players=players.map((p,i)=>i!==o.toIdx?p:{...p,hand:[...p.hand,o.card]});});
+    const log=pile.length
+      ? appendLog(s.log, `Trade finalized: ${pile.map(o=>`${s.players[o.fromIdx].name}→${s.players[o.toIdx].name} ${o.card.name}`).join(", ")}`)
+      : s.log;
+    return{...s,players,tradePile:[],phase:"engineering",engIdx:0,log};
+  }
 
   case "SEL_CARD": return{...s,selCard:s.selCard?.id===a.card.id?null:a.card};
 
@@ -320,6 +334,24 @@ function reducer(s, a) {
       hand:[...p.hand,tile.c.card],
       grid:p.grid.map(t=>t.id===a.tileId?{...t,c:null}:t)});
     return{...s,players,selCard:null};
+  }
+
+  case "SWAP": {
+    const pi=s.engIdx, card=s.selCard;
+    if(!card) return s;
+    const tile=s.players[pi].grid.find(t=>t.id===a.tileId);
+    if(!tile||!tile.c||tile.dmg>0) return s;
+    const isHW=tile.c.t==="hw";
+    // Same eligibility as LIFT — only a same-round, not-yet-harvested seed can be swapped
+    // out; hardware can always be swapped since it's always repositionable.
+    if(!isHW&&(tile.c.dormant||0)>0) return s;
+    const oldCard=tile.c.card;
+    const dirs=card.hwt==="uMirror"?["up","right"]:["up"];
+    const c=card.t==="seed"?{t:"seed",card,dormant:0}:{t:"hw",card,dirs};
+    const players=s.players.map((p,i)=>i!==pi?p:{...p,
+      hand:[...p.hand.filter(h=>h.id!==card.id),oldCard],
+      grid:p.grid.map(t=>t.id===a.tileId?{...t,c}:t)});
+    return{...s,players,selCard:null,log:appendLog(s.log,`${s.players[pi].name}: ${oldCard.name}↔${card.name} T${a.tileId}`)};
   }
 
   case "SET_DIR": {
@@ -416,7 +448,7 @@ function reducer(s, a) {
     const leaders=s.harvestLeaders||[];
     const rest=s.players.map((_,i)=>i).filter(i=>!leaders.includes(i));
     const draftOrder=[...leaders,...rest];
-    return startRound({...s,round:s.round+1,contribIdx:0,contribsRevealed:false,selCard:null,engIdx:0,tradeIdx:0,
+    return startRound({...s,round:s.round+1,contribIdx:0,contribsRevealed:false,selCard:null,engIdx:0,
       draftOrder,
       contribs:s.players.map(p=>({id:p.id,ship:{g:0,gr:0,ex:0},invest:{g:0,gr:0,ex:0},done:false}))});
   }
@@ -770,7 +802,7 @@ function MeteorReveal({meteorHit, meteorResolved, players}){
 }
 
 // ── Player grid ───────────────────────────────────────────
-function Grid({player,sunPos,efx,isActive,selCard,onPlace,onLift,onSetDir}){
+function Grid({player,sunPos,efx,isActive,selCard,onPlace,onLift,onSwap,onSetDir}){
   const tv=useMemo(()=>computeTiles(player,sunPos,efx),[player,sunPos,efx]);
   const sun=SUN[sunPos%4];
   const[hoverId,setHoverId]=useState(null);
@@ -788,11 +820,12 @@ function Grid({player,sunPos,efx,isActive,selCard,onPlace,onLift,onSetDir}){
           const bc=dmg?"#7f1d1d":sunT==="core"?"rgba(161,98,7,0.4)":"#1e2d3d";
           const canPlace=isActive&&selCard&&!tile.c&&!dmg;
           const canLift=isActive&&tile.c&&!dmg&&(tile.c.t==="hw"||(tile.c.dormant||0)===0);
+          const canSwap=selCard&&canLift;
           return(
             <div key={tile.id}
-              onClick={()=>canPlace?onPlace(tile.id):canLift?onLift(tile.id):null}
+              onClick={()=>canPlace?onPlace(tile.id):canSwap?onSwap(tile.id):canLift?onLift(tile.id):null}
               onMouseEnter={()=>setHoverId(tile.id)} onMouseLeave={()=>setHoverId(null)}
-              style={{background:bg,border:`1px solid ${canPlace?"#0d9488":bc}`,borderRadius:2,padding:"4px 5px",minHeight:66,cursor:canPlace||canLift?"pointer":"default",position:"relative",boxSizing:"border-box"}}>
+              style={{background:bg,border:`1px solid ${canPlace?"#0d9488":canSwap?"#a16207":bc}`,borderRadius:2,padding:"4px 5px",minHeight:66,cursor:canPlace||canLift?"pointer":"default",position:"relative",boxSizing:"border-box"}}>
               <div style={{fontSize:9,color:"#374151"}}>{tile.id}</div>
               {dmg&&<div style={{color:"#f87171",fontSize:10}}>☄️{tile.dmg}r</div>}
               {!dmg&&tile.c&&(
@@ -867,41 +900,42 @@ function Colony({player}){
   );
 }
 
-// ── Trade form — send a hand card (seed or hardware) to another player ────
-function TradeForm({player,others,onSend}){
+// ── Per-player trade hand — offer a card into the shared trade pile ───────
+function PlayerTradeHand({player,others,interactive,onOffer}){
   const[toIdx,setToIdx]=useState(others[0]?others[0].idx:null);
   const toName=others.find(o=>o.idx===toIdx)?.name||"";
   return(
-    <div style={{...S.panel,marginTop:8}}>
-      <div style={{fontSize:12,color:"#c0ccdd",marginBottom:8}}>Tap a card below to send it — that's the whole action, nothing to drag.</div>
-      {others.length>1&&(
-        <div style={{display:"flex",gap:8,marginBottom:10,flexWrap:"wrap"}}>
+    <div style={{...S.panel,padding:8}}>
+      <div style={{fontSize:11,fontWeight:"bold",color:interactive?"#40d9c4":"#607890",marginBottom:6}}>
+        {player.name}{!interactive?" (view only)":""}
+      </div>
+      {interactive&&others.length>1&&(
+        <div style={{display:"flex",gap:5,marginBottom:8,flexWrap:"wrap"}}>
           {others.map(o=>(
             <button key={o.idx} onClick={()=>setToIdx(o.idx)}
-              style={{...S.btnSm,fontSize:11,padding:"9px 14px",background:toIdx===o.idx?"#134e4a":"#0a0f1c",color:toIdx===o.idx?"#40d9c4":"#607890"}}>
+              style={{...S.btnSm,fontSize:9,padding:"6px 9px",background:toIdx===o.idx?"#134e4a":"#0a0f1c",color:toIdx===o.idx?"#40d9c4":"#607890"}}>
               → {o.name}
             </button>
           ))}
         </div>
       )}
       {player.hand.length ? (
-        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
           {player.hand.map(c=>{
             const isSeed=c.t==="seed";
             const border=isSeed?CC[c.crop]:"#1e3a5a";
             const bg=isSeed?(c.crop==="g"?"rgba(0,50,25,0.9)":c.crop==="gr"?"rgba(50,38,0,0.9)":"rgba(35,8,55,0.9)"):"rgba(0,20,50,0.9)";
             return(
-              <button key={c.id} onClick={()=>toIdx!=null&&onSend(toIdx,c.id)}
-                style={{display:"block",width:"100%",textAlign:"left",background:bg,border:`2px solid ${border}`,borderRadius:4,padding:"14px 16px",cursor:"pointer"}}>
-                <div style={{fontSize:15,fontWeight:"bold",color:isSeed?CC[c.crop]:"#93c5fd"}}>{c.name}</div>
-                <div style={{fontSize:11,color:"#607890",marginTop:3}}>{isSeed?`Needs L${c.lr} W${c.wr} → yields ${c.yld}`:c.desc}</div>
-                <div style={{fontSize:11,color:"#40d9c4",marginTop:6}}>🤝 Tap to send to {toName}</div>
+              <button key={c.id} disabled={!interactive} onClick={()=>interactive&&toIdx!=null&&onOffer(toIdx,c.id)}
+                style={{display:"block",width:"100%",textAlign:"left",background:bg,border:`2px solid ${border}`,borderRadius:4,padding:"9px 11px",cursor:interactive?"pointer":"default",opacity:interactive?1:0.65}}>
+                <div style={{fontSize:12,fontWeight:"bold",color:isSeed?CC[c.crop]:"#93c5fd"}}>{c.name}</div>
+                {interactive&&<div style={{fontSize:10,color:"#40d9c4",marginTop:3}}>🤝 Tap to offer to {toName}</div>}
               </button>
             );
           })}
         </div>
       ) : (
-        <div style={{color:"#374151",fontSize:11}}>Your hand is empty.</div>
+        <div style={{color:"#374151",fontSize:10}}>Empty</div>
       )}
     </div>
   );
@@ -1268,14 +1302,13 @@ export default function App(){
     );
   }
 
-  const{phase,round,sunPos,vit,players,draft,draftIdx,draftOrder,engIdx,tradeIdx,event,efx,meteorHit,eventDrawn,meteorResolved,harvestResults,harvestLeaders,shipResult,contribs,contribIdx,contribsRevealed,selCard,log}=state;
+  const{phase,round,sunPos,vit,players,draft,draftIdx,draftOrder,engIdx,tradePile,event,efx,meteorHit,eventDrawn,meteorResolved,harvestResults,harvestLeaders,shipResult,contribs,contribIdx,contribsRevealed,selCard,log}=state;
   const demand=DEMAND[round]||{g:0,gr:0,ex:0};
   const adjDem={g:demand.g+efx.demG,gr:demand.gr,ex:efx.demExDouble?demand.ex*2:demand.ex};
   // Whose turn it visibly is, for the ship marker in the Players panel — simultaneous
-  // phases (event/harvest) have no single active player.
+  // phases (event/harvest/trade) have no single active player.
   let activeIdx=null;
-  if(phase==="trade"&&tradeIdx<players.length) activeIdx=tradeIdx;
-  else if(phase==="engineering"&&engIdx<players.length) activeIdx=engIdx;
+  if(phase==="engineering"&&engIdx<players.length) activeIdx=engIdx;
   else if(phase==="contribute"&&!contribsRevealed&&contribIdx<players.length) activeIdx=contribIdx;
   const remoteMode=connectMode==="online";
   const isMyTurn=!remoteMode||activeIdx===null||activeIdx===mySeat;
@@ -1335,7 +1368,7 @@ export default function App(){
                 <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(players.length,4)},1fr)`,gap:10,marginBottom:16}}>
                   {players.map(p=>(
                     <div key={p.id} style={{...S.panel,padding:8}}>
-                      <Grid player={p} sunPos={sunPos} efx={efx} isActive={false} selCard={null} onPlace={()=>{}} onLift={()=>{}} onSetDir={()=>{}}/>
+                      <Grid player={p} sunPos={sunPos} efx={efx} isActive={false} selCard={null} onPlace={()=>{}} onLift={()=>{}} onSwap={()=>{}} onSetDir={()=>{}}/>
                       <div style={{fontSize:10,color:"#607890",marginTop:4}}>G{p.stockpile.g} Gr{p.stockpile.gr} Ex{p.stockpile.ex}</div>
                     </div>
                   ))}
@@ -1348,36 +1381,45 @@ export default function App(){
           {/* ── TRADE ─────────────────────────────────────── */}
           {phase==="trade"&&(
             <div style={S.panel}>
-              <div style={S.h2}>Trading Window — {players[tradeIdx]?.name}</div>
+              <div style={S.h2}>Trading Window</div>
               <div style={{fontSize:12,color:"#607890",marginBottom:12}}>
-                {efx.embargo?"🚫 Trade Embargo — no trades this round.":"Swap the cards Earth randomly dealt you before you commit to Engineering."}
+                Offer cards you're willing to trade to the pile below, naming who they're for. Once everyone's happy, hit Initiate Trade to swap everything at once.
               </div>
-              <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(players.length,4)},1fr)`,gap:8,marginBottom:16}}>
-                {players.map((p,i)=>(
-                  <div key={p.id} style={{...S.panel,border:`1px solid ${i===tradeIdx?"#0d9488":"#1e2d3d"}`,padding:8}}>
-                    <div style={{fontSize:11,fontWeight:"bold",color:i===tradeIdx?"#40d9c4":"#607890",marginBottom:4}}>{p.name}{i===tradeIdx?" (active)":""}</div>
-                    <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
-                      {p.hand.map(c=><div key={c.id} style={{fontSize:10,color:c.t==="seed"?CC[c.crop]:"#93c5fd",background:"rgba(20,30,50,0.8)",border:"1px solid #1e2d3d",borderRadius:2,padding:"2px 5px"}}>{c.name}</div>)}
-                      {!p.hand.length&&<div style={{fontSize:10,color:"#374151"}}>—</div>}
-                    </div>
+              <div style={{...S.panel,border:"1px solid #a16207",marginBottom:12}}>
+                <div style={{fontSize:11,color:"#facc15",fontWeight:"bold",marginBottom:8}}>
+                  🔄 TRADE PILE {tradePile.length?`(${tradePile.length})`:""}
+                </div>
+                {tradePile.length?(
+                  <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                    {tradePile.map(o=>(
+                      <div key={o.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,background:"rgba(0,0,0,0.3)",borderRadius:2,padding:"7px 10px"}}>
+                        <div style={{fontSize:12,color:"#c0ccdd"}}>
+                          <span style={{color:"#40d9c4"}}>{players[o.fromIdx]?.name}</span> → <span style={{color:"#facc15"}}>{players[o.toIdx]?.name}</span>: <b>{o.card.name}</b>
+                        </div>
+                        {(!remoteMode||o.fromIdx===mySeat)&&(
+                          <button onClick={()=>D({type:"TRADE_RETRACT",cardId:o.id})} style={{...S.btnSm,fontSize:10,padding:"5px 9px"}}>↩ Retract</button>
+                        )}
+                      </div>
+                    ))}
                   </div>
-                ))}
+                ):(
+                  <div style={{fontSize:11,color:"#374151"}}>Nobody's offered anything yet.</div>
+                )}
               </div>
-              {remoteMode&&!isMyTurn?<Waiting label={players[tradeIdx]?.name}/>:(
-                <>
-                  {!efx.embargo&&players[tradeIdx]&&(
-                    <TradeForm key={tradeIdx} player={players[tradeIdx]}
-                      others={players.map((p,i)=>({idx:i,name:p.name})).filter(o=>o.idx!==tradeIdx)}
-                      onSend={(toIdx,cardId)=>D({type:"TRADE_SEND",toIdx,cardId})}/>
-                  )}
-                  <div style={{display:"flex",gap:8,marginTop:10}}>
-                    <button onClick={()=>D({type:"NEXT_TRADE"})} style={S.btn}>
-                      {tradeIdx+1>=players.length?"Done →":"Next Player"}
-                    </button>
-                    <button onClick={()=>D({type:"SKIP_TRADE"})} style={{...S.btnSm,color:"#607890",background:"transparent",border:"none"}}>Skip all trades</button>
-                  </div>
-                </>
+              {efx.embargo?(
+                <div style={{fontSize:12,color:"#f87171",marginBottom:12}}>🚫 Trade Embargo — no trades this round.</div>
+              ):(
+                <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(players.length,4)},1fr)`,gap:8,marginBottom:12}}>
+                  {players.map((p,i)=>(
+                    <PlayerTradeHand key={p.id} player={p} interactive={!remoteMode||i===mySeat}
+                      others={players.map((pp,ii)=>({idx:ii,name:pp.name})).filter(o=>o.idx!==i)}
+                      onOffer={(toIdx,cardId)=>D({type:"TRADE_OFFER",fromIdx:i,toIdx,cardId})}/>
+                  ))}
+                </div>
               )}
+              <button onClick={()=>D({type:"TRADE_INITIATE"})} style={S.btn}>
+                {tradePile.length?`🤝 Initiate Trade (${tradePile.length})`:"→ Continue (no trades)"}
+              </button>
             </div>
           )}
 
@@ -1401,6 +1443,7 @@ export default function App(){
                     <Grid player={p} sunPos={sunPos} efx={efx} isActive={true} selCard={selCard}
                       onPlace={tid=>D({type:"PLACE",tileId:tid})}
                       onLift={tid=>D({type:"LIFT",tileId:tid})}
+                      onSwap={tid=>D({type:"SWAP",tileId:tid})}
                       onSetDir={(tid,dirs)=>D({type:"SET_DIR",tileId:tid,dirs})}/>
                     {p?.colony.ag.filter(Boolean).length>=2&&p?.colony.agriWater&&(
                       <div style={{marginTop:8,fontSize:11,color:"#60a5fa"}}>
@@ -1511,6 +1554,16 @@ export default function App(){
               <div style={S.h2}>Phase V — Earth Contribution</div>
               <div style={{fontSize:11,color:"#607890",marginBottom:12}}>
                 Earth needs: <span style={{color:"#4ade80"}}>G{adjDem.g}</span> <span style={{color:"#facc15"}}>Gr{adjDem.gr}</span> <span style={{color:"#c084fc"}}>Ex{adjDem.ex}</span> — each player secretly allocates crops.
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(players.length,4)},1fr)`,gap:8,marginBottom:16}}>
+                {players.map(p=>(
+                  <div key={p.id} style={{...S.panel,padding:8}}>
+                    <div style={{fontSize:11,fontWeight:"bold",color:"#607890",marginBottom:4}}>{p.name} — total harvest</div>
+                    <span style={{color:"#4ade80"}}>G{p.stockpile.g} </span>
+                    <span style={{color:"#facc15"}}>Gr{p.stockpile.gr} </span>
+                    <span style={{color:"#c084fc"}}>Ex{p.stockpile.ex}</span>
+                  </div>
+                ))}
               </div>
               {!contribsRevealed?(
                 <div>
