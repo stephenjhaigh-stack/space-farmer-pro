@@ -255,13 +255,15 @@ function reducer(s, a) {
     const picked=shuf([...avHW,...seedsPicked]);
     const usedS=new Set(seedsPicked.map(c=>c.id));
     const usedH=new Set(avHW.map(c=>c.id));
-    // Nobody chooses which card they get — Earth hands them out at random, no fairness
-    // guarantee. Each card's recipient is picked independently, so an uneven split (one
-    // player short on hardware, another short on crops) can genuinely happen — that's the
-    // point: it's what makes the Trade phase afterward actually matter.
+    // Nobody chooses which card they get — Earth hands them out at random. Card count
+    // per player stays fair (each player gets floor/ceil(picked/n) cards), but WHICH
+    // specific cards land on WHICH player is a free random pairing — it's entirely
+    // possible for one player to get all the crops and another all the machines. That
+    // lopsidedness is deliberate: it's what makes the Trade phase afterward matter.
+    const recipients=shuf(picked.map((_,i)=>s.draftOrder[i%s.draftOrder.length]));
     let players=s.players;
-    picked.forEach(card=>{
-      const pi=s.draftOrder[0|Math.random()*s.draftOrder.length];
+    picked.forEach((card,i)=>{
+      const pi=recipients[i];
       players=players.map((p,idx)=>idx!==pi?p:{...p,hand:[...p.hand,card]});
     });
     return{...s,players,draft:[],seedDeck:sd.filter(c=>!usedS.has(c.id)),hwDeck:hd.filter(c=>!usedH.has(c.id)),
