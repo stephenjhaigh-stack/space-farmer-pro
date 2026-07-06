@@ -265,7 +265,8 @@ function reducer(s, a) {
       players=players.map((p,idx)=>idx!==pi?p:{...p,hand:[...p.hand,card]});
     });
     return{...s,players,draft:[],seedDeck:sd.filter(c=>!usedS.has(c.id)),hwDeck:hd.filter(c=>!usedH.has(c.id)),
-      draftIdx:0,passStreak:0,phase:"draft",log:appendLog(s.log,`Draft: ${picked.length} cards dealt at random.`)};
+      draftIdx:0,passStreak:0,phase:s.efx.embargo?"engineering":"trade",tradeIdx:0,engIdx:0,
+      log:appendLog(s.log,`Draft: ${picked.length} cards dealt at random.`)};
   }
 
   case "TRADE_SEND": {
@@ -867,27 +868,39 @@ function Colony({player}){
 // ── Trade form — send a hand card (seed or hardware) to another player ────
 function TradeForm({player,others,onSend}){
   const[toIdx,setToIdx]=useState(others[0]?others[0].idx:null);
+  const toName=others.find(o=>o.idx===toIdx)?.name||"";
   return(
     <div style={{...S.panel,marginTop:8}}>
-      <div style={{fontSize:11,color:"#607890",marginBottom:6}}>Send a card from your hand to:</div>
+      <div style={{fontSize:12,color:"#c0ccdd",marginBottom:8}}>Tap a card below to send it — that's the whole action, nothing to drag.</div>
       {others.length>1&&(
-        <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}}>
+        <div style={{display:"flex",gap:8,marginBottom:10,flexWrap:"wrap"}}>
           {others.map(o=>(
             <button key={o.idx} onClick={()=>setToIdx(o.idx)}
-              style={{...S.btnSm,background:toIdx===o.idx?"#134e4a":"#0a0f1c",color:toIdx===o.idx?"#40d9c4":"#607890"}}>
-              {o.name}
+              style={{...S.btnSm,fontSize:11,padding:"9px 14px",background:toIdx===o.idx?"#134e4a":"#0a0f1c",color:toIdx===o.idx?"#40d9c4":"#607890"}}>
+              → {o.name}
             </button>
           ))}
         </div>
       )}
       {player.hand.length ? (
-        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-          {player.hand.map(c=><Chip key={c.id} card={c} onClick={()=>toIdx!=null&&onSend(toIdx,c.id)}/>)}
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {player.hand.map(c=>{
+            const isSeed=c.t==="seed";
+            const border=isSeed?CC[c.crop]:"#1e3a5a";
+            const bg=isSeed?(c.crop==="g"?"rgba(0,50,25,0.9)":c.crop==="gr"?"rgba(50,38,0,0.9)":"rgba(35,8,55,0.9)"):"rgba(0,20,50,0.9)";
+            return(
+              <button key={c.id} onClick={()=>toIdx!=null&&onSend(toIdx,c.id)}
+                style={{display:"block",width:"100%",textAlign:"left",background:bg,border:`2px solid ${border}`,borderRadius:4,padding:"14px 16px",cursor:"pointer"}}>
+                <div style={{fontSize:15,fontWeight:"bold",color:isSeed?CC[c.crop]:"#93c5fd"}}>{c.name}</div>
+                <div style={{fontSize:11,color:"#607890",marginTop:3}}>{isSeed?`Needs L${c.lr} W${c.wr} → yields ${c.yld}`:c.desc}</div>
+                <div style={{fontSize:11,color:"#40d9c4",marginTop:6}}>🤝 Tap to send to {toName}</div>
+              </button>
+            );
+          })}
         </div>
       ) : (
         <div style={{color:"#374151",fontSize:11}}>Your hand is empty.</div>
       )}
-      <div style={{fontSize:10,color:"#4b5563",marginTop:6}}>Click a card to send it — takes effect immediately.</div>
     </div>
   );
 }
@@ -1259,8 +1272,7 @@ export default function App(){
   // Whose turn it visibly is, for the ship marker in the Players panel — simultaneous
   // phases (event/harvest) have no single active player.
   let activeIdx=null;
-  if(phase==="draft"&&draft.length>0) activeIdx=draftOrder[draftIdx%draftOrder.length];
-  else if(phase==="trade"&&tradeIdx<players.length) activeIdx=tradeIdx;
+  if(phase==="trade"&&tradeIdx<players.length) activeIdx=tradeIdx;
   else if(phase==="engineering"&&engIdx<players.length) activeIdx=engIdx;
   else if(phase==="contribute"&&!contribsRevealed&&contribIdx<players.length) activeIdx=contribIdx;
   const remoteMode=connectMode==="online";
@@ -1328,28 +1340,6 @@ export default function App(){
                 </div>
                 <button onClick={()=>D({type:"DEAL_DRAFT"})} style={S.btn}>→ Deal Draft Cards</button>
               </>)}
-            </div>
-          )}
-
-          {/* ── DRAFT ─────────────────────────────────────── */}
-          {phase==="draft"&&(
-            <div style={S.panel}>
-              <div style={S.h2}>Draft Complete</div>
-              <div style={{fontSize:11,color:"#607890",marginBottom:12}}>Earth dealt this round's cards at random — nobody chooses which one they get.</div>
-              <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(players.length,4)},1fr)`,gap:8,marginBottom:16}}>
-                {players.map(p=>(
-                  <div key={p.id} style={{...S.panel,padding:8}}>
-                    <div style={{fontSize:11,color:"#607890",marginBottom:4}}>{p.name}</div>
-                    <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
-                      {p.hand.map(c=><div key={c.id} style={{fontSize:10,color:c.t==="seed"?CC[c.crop]:"#93c5fd",background:"rgba(20,30,50,0.8)",border:"1px solid #1e2d3d",borderRadius:2,padding:"2px 5px"}}>{c.name}</div>)}
-                      {!p.hand.length&&<div style={{fontSize:10,color:"#374151"}}>—</div>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <button onClick={()=>D({type:efx.embargo?"SKIP_TRADE":"NEXT_TRADE"})} style={S.btn}>
-                → {efx.embargo?"Skip to Engineering":"Trading Window"}
-              </button>
             </div>
           )}
 
