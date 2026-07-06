@@ -525,10 +525,6 @@ function LoadingScreen({onBegin,volume,muted,onVolume,onMute,onUnlockAudio}){
         *{cursor:var(--sfp-cursor) !important;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
         img{-webkit-user-drag:none;user-drag:none;}
         input[type="text"]{cursor:text !important;-webkit-user-select:text;user-select:text;}
-        @media (max-width:820px){
-          .sfp-game-layout{flex-direction:column !important;}
-          .sfp-sidebar{width:100% !important;}
-        }
       `;
       document.head.appendChild(style);
     }
@@ -1019,6 +1015,13 @@ export default function App(){
     setCopied(true);
     setTimeout(()=>setCopied(false),1500);
   };
+  const[isNarrow,setIsNarrow]=useState(()=>typeof window!=="undefined"&&window.innerWidth<=820);
+  useEffect(()=>{
+    const onResize=()=>setIsNarrow(window.innerWidth<=820);
+    onResize();
+    window.addEventListener("resize",onResize);
+    return()=>window.removeEventListener("resize",onResize);
+  },[]);
   const stateRef=useRef(state);
   stateRef.current=state;
   const D=a=>{
@@ -1235,7 +1238,7 @@ export default function App(){
         <VolumeControl volume={volume} muted={muted} onVolume={setVolume} onMute={()=>setMuted(m=>!m)}/>
       </div>
 
-      <div className="sfp-game-layout" style={{display:"flex",gap:16,padding:"16px 24px",width:"min(1700px,96vw)",margin:"0 auto"}}>
+      <div style={{display:"flex",flexDirection:isNarrow?"column":"row",gap:16,padding:"16px 24px",width:"min(1700px,96vw)",margin:"0 auto"}}>
         {/* MAIN */}
         <div style={{flex:1,minWidth:0,fontSize:13}}>
 
@@ -1568,7 +1571,7 @@ export default function App(){
         </div>
 
         {/* SIDEBAR */}
-        <div className="sfp-sidebar" style={{width:300,flexShrink:0,display:"flex",flexDirection:"column",gap:14}}>
+        <div style={{width:isNarrow?"100%":300,flexShrink:0,display:"flex",flexDirection:"column",gap:14}}>
           {/* Sun + demand, grouped — this is the "what matters this round" corner */}
           <div style={S.panel}>
             <div style={{...S.label,marginBottom:8,fontSize:11}}>Sun Dial</div>
