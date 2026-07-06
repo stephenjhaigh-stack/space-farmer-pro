@@ -36,9 +36,14 @@ function makeRoomCode() {
 // a 404 in the network tab on these paths is the tell.
 const AUDIO_INTRO = "audio/intro-theme.mp3";
 const AUDIO_GAMEPLAY = "audio/gameplay-theme.mp3";
+const AUDIO_STORY = "audio/story-theme.mp3";
+const IMG_EARTH = "images/earth-cutout.png";
+const IMG_ASTEROID = "images/asteroid-farm-cutout.png";
 
 // Pixel-art pointing-hand cursor (inline SVG data URI, no external asset needed).
 const CURSOR_HAND = 'url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAwCAYAAABjezibAAAN/0lEQVR4nMVZCZBV1Zn+zt3ee/ftWy/2QtNgNyCC2AKKS4MIiEaNRnBiNiqVmjLJRFMpKpplAlRNkjIjFXUCo4nRGCtq6NExMUZkQGkIEhVkGbZm7w16fd1vue+9u56pc95rbKDpbkxq8nfdvve8e+493/nP///n+/8L/G1CRrz8pEHQ2Cg1NDTIAIS/cazxAlomFgfjIBpW7VJrZix8uLJ6ylsVE6e/Ujv3gaUgHAvrd4GsumyQ5017DGEvdz5pNkrXr31J7n71kZeJY35Wrb0ZltaPfPtHUKKTv3l066/WXznzzopsuvN+4tiK6Ct/s/XApiMAJQChf2+ArB+tblhS7qQSVypS8OzJw5uP1c65904nl/xTeOH3TLWyQaCE2MmdzyrpA2+0COXT7rE79jW5YpOuJqICo+fYWUlW7j9xcPv7F092dK2MIXxZ6IS6G5cSbXCH5PY32462c8JVt9yXP3vEJ/tL4CmtJ3amW4Sekb3Vs+E4ttfq2PuMp/K6q2N3/NSI3fVEXq1fWG4YmbXln/lnFQ0NIrPN8Yw/VgcCrHGqZyyaaMN42Tv9noll9z9jBueuiFLHeYEo7kbTsh1Ny4kgIiwHJJPVQYigUtus9VTPdkRZlWGbLk/NjZQ6qBFPDrixe7eJ5marqEXy6QEuW8bvW1rfHDlQGvLPWG4Jsip7p95FXbHJqmnoCyNe0bp2gptQCgRVgTbUuEBAKAGxbEsXCGyIcGCbBiGEpESvVl1VO/Ppiprpv6uecvO1bHVGA8nUfGlpKpxE2ACRKKG6IDjMzCVCJAmm7dghVcCTD4TR1mciHvHhxGEfNv6SwgVC3LKIjAHYFuCRmW+QIE0lfu+deEMdUbzInH5/wYT6xnmtLc2nh+z8MjVYONn8aUrSWYqBLEUyR0FtBwIBTAewbKAmJiHuF5E3KCQBSOVsPDBbxc+XR/D458Lk4Vt9yJtOqSi76oI3PGRFF6w0FG+83NQTjXyQxkbx8jXIgBEgk7NR4RXx0OIgWvoE1JW58VqLjK2HHYgC4X1yJoVkUX7NvQqAVyGYX+/hU9zYI8G2HUoFCTndlPRMzrYFiRI4o3rzmAD5SDa4tpZd54HqViHKIt7+FYHFLK3Yjd1n4IaLTQHdcmBZDkzWYIZCKOpLJUg+GftlQnrM0Z1kbIDDcKZyFCYcSCaB7YwrBEAkABUKE3AoIInAv302jIryKJb8l4BTBjOgS8tlbT2iUBiQnS9nCxoS9gwDyYR5vc3+jSH/Lxv4hULHii3/aIDkMvbYfwjAy5FPBZBeYDuU0vOOsX6/HBm3FzOxHQeEELhcCgRC4BRHdSkKHMeBW5EhK4ybMiFUkiTIkghREiHLnwxl2w53kr8LQIeC+EqpIAgEPlWFbdvo6OyCrptQJFmxLQudZ7u5Wya9HtLX1w8IgiBKgjyYTOFMVw8ch6K/f5BPjh3BoJ/HzPFo9SKAyzZQsWfdVtLcvBoTPuyRCEE+WunJ6bqBr33zMezdfwiGaUASRcntVmpb2zuFpfd+Bfk8YzGAx+NmdCvkkpXQr198FeuefZE4lMLjdsPrVZHN5vCnP2/Gg8vvhiwrcOzLArhKaFpOzj3S2gprWmOjL9VjfaG1rZNOqqnCUz/7EQIBPx5ZuRq33nKD8MGufXhs5TdwzdXTIIoinv7PF3C45ThRPR6uqX999GGutd9teAPPvfAKAn4ffvLEOmzZugO6aUB2yyQ/NsAhGr7GWfA8vWPwo6abu7euzciOIyfO5JdMrq253tR1RzcN4VRrO3bs3I2jx0/impnTkBgYwPpfvoR771qCZCqN1954G1PqJ8GyLLy96T3U1lRD9bjxyoY/QJQkZLI5zJtzLXbvPSBkczk7Hou1p88AaC4Zcb15OFq1apWwevVqetO/dz+e2vXSyvSht4gcqoKdTcDJJ5ndMe8QQsEALNtGSTyGK8pKwGzM5/dCz+s4duI0vKoHtRMnQNd15kDwejx8IoZpoW7yRO4oA4NJ7D9wBJZpOoFgkFiW0dR2SP4CMN9hCroI4LING8Sm5cvtm56htw+88+O304fepJFFP7Qkfznpf+sxDCa6hUUL5wu9vX3w+bz4/W9+wTdWQRAgEAEOZbRLQC6fgyRKHAS3/WIkNg2TO4nLrXBHMgwTx0+ewn888yL+8NZmGgj4iW3Zt7Ud/suWQsbYdJ5VCj3rDvJXJbc9PU87sZXGl/7Y8tUtka2OD6WBrlPSotsWCi8//yReeu5J7Nl3CK+/uREuRUYymUIqnUYmo/EzA6EbBlLpDNKZDNLsnM7AME3Yjl1oZzTerq+bjF+vexxf/eL9TjKVpoos/1PBQy9eYqEZW/lFYufzjhKthVJST6jWjWxXC0LhCNb84NvI5vIoLyvBwgU34vU/voN0Jss1KEsSdwzmBCwOsrDBNTvsYL+xe0NtJhkti2Ra48515aSJJJVJz6AbqIimpotylHM7iePkDQKHMPbDWPFgfxcab5qLybXVSKUyBb4HCkEUkEhl0drZjb6BJLdJFohFTnFYjwtsqBj7hrclUYRhGIiEguSORY3IZfXAdzd+Vx2Z8he9x6fGt2TOHLIqrKNk5pQyhxHLSbU1fMcoK42jtf0MNm3Zjvvuvh2VZVEE/V6ktRzazvSgq6cfed2AKAiQiloaMwYzrQO4cvJEEIE4p93aiE8IBaNcJRw/suMD09DX9zQ/Jd4T+ItQVypTm8hcc//z7nYsvW8F5s1twOfuWgJN0xCPhjGhogSl0RBnzB1ne9FxtgepTJavkcQSkwsp9iWAsjRwjDi4hkUFobf140d0C8mvf+v7X1dcciyVTOLNP29Ga3sHFi+cj0dXfgNnevvhdbmguGS+XGz7Y+GFaTCV0dDTP4j+AYJgwAufV4UiSTzksIPjuVBDLKcZhXwN30kc6lCk2nf/qLRh8cuDicSrV5SXzfzyg/c61107U5g+tR5dvb0YGEwjQdNQPS6E/F643SzBJPC4FX5EQjZ3osGUhkQyDZ/qQdDvg9ulFAYZliMxY2hr64Rj2YgjPiZAPkGKafLR3ZuOxCY0dDMP/eqXllH2zoyWQcjv44Np2TyS6Qw6u/vhUiQE/F6uSeYozLMjoQAHn8mxfho6unrhcSkIBnxQixNif3ndxPaduyC5FHTks2Q8fJACV3GbDAb91v4DR+gvnv0tB8Hil1UMJT6vB5XlcVSVl3Dq1T+QQltnN3oTg7wfe40gigj4vKgqi6OiNAZRENHVm0D72R5o2RxikSA2vbsNf/3wYxoK+IxD2/7XGIloX0xYebBc49iWsy0cDpAnnnwWm7fuQHlJjHs0o1ssRBS8FogGA6gojcLv8yCd1nCy7QwPQclUBqZpcA7JtBqPBnFFSRQBr4qKsjgOHTmBR3/4U6ooLlY2+fj48Y16sdRynjePpFZeGps0rXGySew98UjIMzCYJg997YvCigfvQyQS5oY9TOUYnmPkdBOD6QxyOZ3HO79P5RqXRIH3zWpZ/Pcf38FP1q6nbpfLTqU1UXeMhZ0H339vpK1uZPdZtUrAmjVOSe11366uqvr5jKvq8MFHe/hePHf2LNRUV3BWjHNhhBaRkkKlAUDetKBlsjBtGwGfyokDI7Yf7t6Ls2d7MHfOLKets1s4ePDw+t5Tu/6FLF8uoOl8cJcGWNQkIcQJV8/6Xkk8uvKaq6eGu7p7sWfvAU5Az1PfkNBPfiS8JFJwBkYohvKS6VPrMGlSDT145GiuvbXrudLa2h8cam7Shr9h3ADZUs+6fvHk9q6+d90ud1U4FKC6rheKMbSgQFrcNQrx9vw2H7E4JLMKdimJItWyOZLWtHQ8FLi7ZV/z1pGWdiyA/HVTZt8WSQ1o2+vqa6cuuGWeEwqHBMb9BpODkEQZ/oAfrCrZ29uLUDAExeWCaZpIJPoRj5XwfVvTMsjn8ojGYoW8JZWEz+ule/YdJM3b/pr0eH1zTu3fcqyoeDq+pImVwpqJ1dcz656Kysqpn7n9VlaYEr2qiqC/AEqWZYTDYbAgqefzCIdD8Hg83MMt00A0GuZMR5ElaLKGWDTCtWHbFhRFIXffudhq7+gKtrQcXQHg+5jPSsK86joOgEWxHWeC36dSLZuljPdls1n+ez6f5/aVTCZ5m+3NjEUzQGynyOVynPKzPkyj7JrdH3qWiWHoCAZ9lBBSxU3jEpR/VICiKDr5fJ4kEgM8/g0BHKJP6XSanxnPY6CGZHh7iG6xSQy1mbMwwJqmEUGQRs3rRgVIKcuHRU7l2UuH87oLRSjSrJHa7FmWxA8JY9+KJPM4WSjOfUqAtu2YiqKgsuoKJBJJRJkdEQKmUZZ7+P1+vqR9fX0IBoNwnXOSBGKxON+bmeZy+Txi0Sh/J3uWga+qrMCBIyeoYZmFEibtIeMH2MwyrGZ4VP977R2dzqnTHWTSxGo7HIkQtt1ZlglFVriTsBiXz+cKTuIuOAmzr0gkVEiiWNlDkhCNRHgQYtufqqo0MZCkx06cJorL9R4PRaxS3XwxFDL6B5w1TmX9DWsVxfWda2ZehcqKcr48mUyakwFVVXnoGEwm4VW9vC7DSiHMNgPBIM/2mIezBD0QCPC+mpblVYgDh4+it7vnjZsbah5oappmjZRyjgGQfzgUKN3gTJl127eyhr4im82ybx1ELHwshE0LOY5IRFBqwykGM9a2aSFiCBB40C70ZU7CPp3QvCTLr9dVKE81Nzcztx7xE8RYAM/1YVG75ehR1+e/84QYCWUJuot3Sotn1h66HqXtUlWaHhgQtr/2WmY4cR1N/g85NZChPqyoLAAAAABJRU5ErkJggg==") 12 4, auto';
+// Grasping-fist variant — swapped in globally while any mouse button is held down.
+const CURSOR_FIST = 'url("data:image/png;base64,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") 14 14, auto';
 
 // ── Grid helpers ──────────────────────────────────────────
 const tR = id => Math.floor((id-1)/3);
@@ -459,13 +464,21 @@ function PixelShip({size=12,still=false}){
 }
 
 // ── Starfield background (shared by every screen, not just loading) ─────────
+// Three star layers (far/dim -> near/bright) drifting at different speeds for a subtle
+// parallax depth effect, plus a faint nebula haze behind everything for atmosphere.
+const STAR_LAYER_FAR="radial-gradient(0.88px 0.88px at 231px 443px,#c7d2fe,transparent),radial-gradient(1.03px 1.03px at 231px 260px,#fff,transparent),radial-gradient(0.84px 0.84px at 411px 262px,#fff,transparent),radial-gradient(0.82px 0.82px at 95px 48px,#fff,transparent),radial-gradient(1.05px 1.05px at 275px 414px,#fff,transparent),radial-gradient(1.08px 1.08px at 304px 202px,#fff,transparent),radial-gradient(0.68px 0.68px at 315px 332px,#fff,transparent),radial-gradient(0.63px 0.63px at 270px 32px,#fff,transparent),radial-gradient(0.62px 0.62px at 123px 307px,#fff,transparent),radial-gradient(1.02px 1.02px at 225px 302px,#fff,transparent),radial-gradient(0.85px 0.85px at 327px 150px,#fff,transparent),radial-gradient(0.74px 0.74px at 234px 335px,#dbe4ff,transparent),radial-gradient(0.76px 0.76px at 362px 130px,#fff,transparent),radial-gradient(0.64px 0.64px at 147px 15px,#c7d2fe,transparent),radial-gradient(0.75px 0.75px at 55px 433px,#fff,transparent),radial-gradient(0.94px 0.94px at 8px 433px,#fff,transparent),radial-gradient(0.63px 0.63px at 474px 466px,#fff,transparent),radial-gradient(0.81px 0.81px at 362px 203px,#fff,transparent),radial-gradient(0.94px 0.94px at 101px 398px,#fff,transparent),radial-gradient(0.61px 0.61px at 159px 170px,#fff,transparent),radial-gradient(0.67px 0.67px at 472px 60px,#fff,transparent),radial-gradient(0.83px 0.83px at 5px 30px,#fff,transparent),radial-gradient(0.69px 0.69px at 349px 286px,#fff,transparent),radial-gradient(0.67px 0.67px at 374px 393px,#fff,transparent),radial-gradient(0.81px 0.81px at 59px 202px,#fff,transparent),radial-gradient(1.09px 1.09px at 138px 442px,#c7d2fe,transparent),radial-gradient(0.71px 0.71px at 453px 10px,#fff,transparent),radial-gradient(0.92px 0.92px at 437px 308px,#fff,transparent),radial-gradient(0.82px 0.82px at 74px 109px,#fff,transparent),radial-gradient(1.02px 1.02px at 312px 168px,#fff,transparent),radial-gradient(0.7px 0.7px at 38px 46px,#fff,transparent),radial-gradient(0.78px 0.78px at 7px 307px,#fff,transparent),radial-gradient(0.89px 0.89px at 65px 491px,#dbe4ff,transparent),radial-gradient(0.69px 0.69px at 443px 197px,#fff,transparent),radial-gradient(1.01px 1.01px at 465px 116px,#fff,transparent),radial-gradient(0.97px 0.97px at 97px 81px,#dbe4ff,transparent),radial-gradient(0.79px 0.79px at 351px 486px,#fff,transparent),radial-gradient(0.62px 0.62px at 40px 215px,#fff,transparent),radial-gradient(0.73px 0.73px at 262px 492px,#fff,transparent),radial-gradient(0.81px 0.81px at 200px 131px,#c7d2fe,transparent),radial-gradient(0.69px 0.69px at 150px 266px,#fff,transparent)";
+const STAR_LAYER_MID="radial-gradient(1.02px 1.02px at 71px 124px,#fde047,transparent),radial-gradient(1.52px 1.52px at 359px 61px,#fde047,transparent),radial-gradient(1.67px 1.67px at 118px 137px,#fff,transparent),radial-gradient(1.65px 1.65px at 307px 91px,#60a5fa,transparent),radial-gradient(1.4px 1.4px at 362px 24px,#fff,transparent),radial-gradient(1.3px 1.3px at 135px 159px,#fff,transparent),radial-gradient(1.37px 1.37px at 57px 298px,#f0abfc,transparent),radial-gradient(1.23px 1.23px at 31px 357px,#fff,transparent),radial-gradient(1.22px 1.22px at 94px 201px,#f0abfc,transparent),radial-gradient(1.2px 1.2px at 263px 72px,#fff,transparent),radial-gradient(1.3px 1.3px at 354px 94px,#fff,transparent),radial-gradient(1.65px 1.65px at 16px 214px,#fff,transparent),radial-gradient(1.28px 1.28px at 264px 209px,#fde047,transparent),radial-gradient(1.26px 1.26px at 157px 288px,#60a5fa,transparent),radial-gradient(1.39px 1.39px at 294px 304px,#fff,transparent),radial-gradient(1.63px 1.63px at 387px 344px,#fff,transparent),radial-gradient(1.25px 1.25px at 46px 227px,#fff,transparent),radial-gradient(1.65px 1.65px at 206px 29px,#f0abfc,transparent),radial-gradient(1.0px 1.0px at 122px 205px,#fff,transparent),radial-gradient(1.02px 1.02px at 99px 87px,#fff,transparent),radial-gradient(1.64px 1.64px at 91px 168px,#60a5fa,transparent),radial-gradient(1.37px 1.37px at 18px 32px,#f0abfc,transparent),radial-gradient(1.46px 1.46px at 378px 103px,#fff,transparent),radial-gradient(1.09px 1.09px at 99px 210px,#fff,transparent)";
+const STAR_LAYER_NEAR="radial-gradient(2.11px 2.11px at 292px 85px,#60a5fa,transparent),radial-gradient(2.3px 2.3px at 245px 333px,#fde047,transparent),radial-gradient(2.35px 2.35px at 333px 315px,#fff,transparent),radial-gradient(1.98px 1.98px at 351px 270px,#fff,transparent),radial-gradient(1.66px 1.66px at 344px 325px,#fff,transparent),radial-gradient(2.32px 2.32px at 265px 254px,#60a5fa,transparent),radial-gradient(2.04px 2.04px at 143px 163px,#fde047,transparent),radial-gradient(2.38px 2.38px at 28px 163px,#fff,transparent),radial-gradient(2.2px 2.2px at 109px 33px,#fff,transparent),radial-gradient(2.01px 2.01px at 164px 124px,#fff,transparent)";
 function Starfield(){
   return(
-    <div style={{
-      position:"fixed",inset:0,zIndex:0,pointerEvents:"none",
-      backgroundImage:"radial-gradient(1px 1px at 20px 30px,#fff,transparent),radial-gradient(1px 1px at 90px 120px,#fff,transparent),radial-gradient(1.5px 1.5px at 160px 60px,#fde047,transparent),radial-gradient(1px 1px at 210px 200px,#fff,transparent),radial-gradient(1px 1px at 55px 190px,#fff,transparent),radial-gradient(1.5px 1.5px at 260px 40px,#60a5fa,transparent)",
-      backgroundSize:"300px 300px",backgroundRepeat:"repeat",animation:"sfp-stars 90s linear infinite",opacity:0.7,
-    }}/>
+    <div style={{position:"fixed",inset:0,zIndex:0,pointerEvents:"none",overflow:"hidden"}}>
+      <div style={{position:"absolute",inset:"-10%",
+        background:"radial-gradient(ellipse 60% 40% at 25% 30%,rgba(88,60,140,0.16),transparent 70%),radial-gradient(ellipse 55% 45% at 75% 70%,rgba(20,90,110,0.14),transparent 70%)",
+      }}/>
+      <div style={{position:"absolute",inset:0,backgroundImage:STAR_LAYER_FAR,backgroundSize:"500px 500px",backgroundRepeat:"repeat",animation:"sfp-stars 140s linear infinite",opacity:0.55}}/>
+      <div style={{position:"absolute",inset:0,backgroundImage:STAR_LAYER_MID,backgroundSize:"420px 420px",backgroundRepeat:"repeat",animation:"sfp-stars 90s linear infinite",opacity:0.75}}/>
+      <div style={{position:"absolute",inset:0,backgroundImage:STAR_LAYER_NEAR,backgroundSize:"380px 380px",backgroundRepeat:"repeat",animation:"sfp-stars 55s linear infinite",opacity:0.85}}/>
+    </div>
   );
 }
 
@@ -504,7 +517,8 @@ function LoadingScreen({onBegin,volume,muted,onVolume,onMute,onUnlockAudio}){
         @keyframes sfp-stars{from{background-position:0 0;}to{background-position:0 -1000px;}}
         button:active{transform:translate(2px,2px);box-shadow:none!important;}
         ::selection{background:#0d9488;color:#02040a;}
-        *{cursor:${CURSOR_HAND} !important;}
+        :root{--sfp-cursor:${CURSOR_HAND};}
+        *{cursor:var(--sfp-cursor) !important;}
         input[type="text"]{cursor:text !important;}
       `;
       document.head.appendChild(style);
@@ -590,6 +604,69 @@ function RoomWaiting({roomCode,volume,muted,onVolume,onMute}){
         <div style={{fontFamily:PIXEL,fontSize:12,color:"#40d9c4",marginBottom:16,lineHeight:1.8}}>WAITING FOR HOST</div>
         <div style={{color:"#607890",fontSize:12,marginBottom:16}}>You're connected to room <b style={{color:"#facc15"}}>{roomCode}</b>. The game will appear as soon as your friend finishes setting it up.</div>
         <PixelShip/>
+      </div>
+    </div>
+  );
+}
+
+// ── Story + how-to-play intro ─────────────────────────────
+const STORY_PAGES=[
+  {img:"earth",lines:["Earth is dying.","Catastrophic warming. Failing harvests. Billions starving."]},
+  {img:"earth",lines:["You are part of the Exodus Project —","a last chance to build self-sustaining colonies in the asteroid belt."]},
+  {img:"asteroid",lines:["Earth sends you seeds and technology.","In return, you must ship food back to keep it alive."]},
+  {img:"asteroid",lines:["But every resource you send home is one you could keep for yourself.","Build too slowly and you fall behind. Hoard too much, and Earth collapses — taking everyone with it."]},
+];
+const HOWTO_PAGES=[
+  {title:"HOW TO PLAY — GROWING",bullets:[
+    "Each round: Draft seeds & hardware → Trade → Engineer your grid → Harvest.",
+    "Crops need enough Light ☀ and Water 💧 on their tile to mature — check both before you plant.",
+    "A crop that falls short goes dormant. Three dormant rounds in a row and it dies.",
+  ]},
+  {title:"HOW TO PLAY — WINNING",bullets:[
+    "Ship harvested crops to Earth to keep its Vitality up — fall short and Earth weakens.",
+    "Or invest crops in your Colony Board instead, for Development Points.",
+    "Fill all three Colony tracks completely for an instant win — but Earth must still survive for anyone to win at all.",
+  ]},
+];
+function IntroStory({onDone}){
+  const[page,setPage]=useState(0);
+  const total=STORY_PAGES.length+HOWTO_PAGES.length;
+  const isStory=page<STORY_PAGES.length;
+  const sp=isStory?STORY_PAGES[page]:null;
+  const hp=!isStory?HOWTO_PAGES[page-STORY_PAGES.length]:null;
+  const next=()=>page+1>=total?onDone():setPage(p=>p+1);
+  return(
+    <div style={{position:"fixed",inset:0,background:"#02040a",overflow:"hidden",fontFamily:"monospace"}}>
+      <Starfield/>
+      <button onClick={onDone} style={{position:"absolute",top:16,right:20,...S.btnSm,background:"transparent",border:"1px solid #1e2d3d",color:"#607890",zIndex:5}}>Skip Intro →</button>
+      {isStory&&(
+        <>
+          <img src={sp.img==="earth"?IMG_EARTH:IMG_ASTEROID} alt=""
+            style={sp.img==="earth"
+              ?{position:"absolute",left:"50%",bottom:"-30%",transform:"translateX(-50%)",width:"min(900px,110vw)"}
+              :{position:"absolute",left:"50%",top:"54%",transform:"translate(-50%,-50%)",width:"min(520px,70vw)"}}/>
+          <div style={{position:"absolute",top:"14%",left:"50%",transform:"translateX(-50%)",width:"min(720px,84vw)",textAlign:"center"}}>
+            {sp.lines.map((l,i)=>(
+              <div key={i} style={{fontSize:18,color:"#e8edf5",lineHeight:1.7,textShadow:"0 2px 10px rgba(0,0,0,0.9)",marginBottom:8}}>{l}</div>
+            ))}
+          </div>
+        </>
+      )}
+      {!isStory&&(
+        <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",width:"min(640px,86vw)"}}>
+          <div style={{fontFamily:PIXEL,fontSize:14,color:"#40d9c4",marginBottom:22,textAlign:"center",lineHeight:1.8}}>{hp.title}</div>
+          {hp.bullets.map((b,i)=>(
+            <div key={i} style={{...S.panel,marginBottom:10,fontSize:13,color:"#c0ccdd",lineHeight:1.6}}>▸ {b}</div>
+          ))}
+        </div>
+      )}
+      <div style={{position:"absolute",bottom:30,left:"50%",transform:"translateX(-50%)",display:"flex",flexDirection:"column",alignItems:"center",gap:10}}>
+        <button onClick={next} style={{...S.btn,fontSize:11}}>{page+1>=total?"▶ Start Mission":"Continue →"}</button>
+        <div style={{display:"flex",gap:5}}>
+          {Array.from({length:total}).map((_,i)=>(
+            <div key={i} style={{width:6,height:6,borderRadius:3,background:i===page?"#40d9c4":"#1e2d3d"}}/>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -901,10 +978,11 @@ function Chip({card,sel,onClick}){
 // ══════════════════════════════════════════════════════════
 export default function App(){
   const[started,setStarted]=useState(false);
+  const[storyDone,setStoryDone]=useState(false);
   const[introDone,setIntroDone]=useState(false);
   const[volume,setVolume]=useState(0.5);
   const[muted,setMuted]=useState(false);
-  const introAudio=useRef(null), gameAudio=useRef(null);
+  const introAudio=useRef(null), storyAudio=useRef(null), gameAudio=useRef(null);
   const[playerNames,setPlayerNames]=useState(["Player 1","Player 2"]);
   const[state,dispatch]=useReducer(reducer,null,()=>makeState(["Player 1","Player 2"]));
   // Remote play: null = not decided yet, "local" = same-device hotseat (unchanged
@@ -938,24 +1016,34 @@ export default function App(){
 
   useEffect(()=>{
     const a=new Audio(AUDIO_INTRO); a.loop=true;
+    const s=new Audio(AUDIO_STORY); s.loop=true;
     const b=new Audio(AUDIO_GAMEPLAY); b.loop=true;
-    introAudio.current=a; gameAudio.current=b;
-    return()=>{a.pause();b.pause();};
+    introAudio.current=a; storyAudio.current=s; gameAudio.current=b;
+    return()=>{a.pause();s.pause();b.pause();};
   },[]);
   useEffect(()=>{
     const v=muted?0:volume;
-    if(introAudio.current) introAudio.current.volume=v;
-    if(gameAudio.current) gameAudio.current.volume=v;
+    [introAudio,storyAudio,gameAudio].forEach(r=>{if(r.current) r.current.volume=v;});
   },[volume,muted]);
+  // Three-phase soundtrack: loading screen -> story/tutorial -> gameplay. `showingStory`
+  // is recomputed below once `started` exists; this effect just reacts to the phase.
+  const showingStory=started&&!storyDone;
   useEffect(()=>{
-    if(introDone){
-      introAudio.current?.pause();
+    const all=[introAudio,storyAudio,gameAudio];
+    if(!introDone){
+      all.forEach(r=>r.current?.pause());
       if(introAudio.current) introAudio.current.currentTime=0;
-      gameAudio.current?.play().catch(()=>{});
-    } else {
       introAudio.current?.play().catch(()=>{});
+    } else if(showingStory){
+      all.forEach(r=>{if(r!==storyAudio) r.current?.pause();});
+      if(storyAudio.current) storyAudio.current.currentTime=0;
+      storyAudio.current?.play().catch(()=>{});
+    } else {
+      all.forEach(r=>{if(r!==gameAudio) r.current?.pause();});
+      if(gameAudio.current) gameAudio.current.currentTime=0;
+      gameAudio.current?.play().catch(()=>{});
     }
-  },[introDone]);
+  },[introDone,showingStory]);
   const unlockAudio=()=>{ if(!introDone) introAudio.current?.play().catch(()=>{}); };
   // Browsers block audio until a user gesture happens *somewhere* on the page — there's no
   // way around that entirely, so instead of requiring the volume slider specifically, catch
@@ -970,6 +1058,24 @@ export default function App(){
       document.removeEventListener("keydown",tryPlay,{capture:true});
     };
   },[introDone]);
+  // Swap in the grasping-fist cursor for as long as any mouse button is held down,
+  // anywhere on the page — not scoped to buttons, so dragging/clicking feels physical.
+  // Driven through a CSS custom property (one rule, value swapped in place) rather than
+  // toggling between two competing `!important` rules — a class-based version of this
+  // was flickering/disappearing, likely a cascade race between the two rules.
+  useEffect(()=>{
+    const root=document.documentElement.style;
+    const grab=()=>root.setProperty("--sfp-cursor",CURSOR_FIST);
+    const release=()=>root.setProperty("--sfp-cursor",CURSOR_HAND);
+    document.addEventListener("mousedown",grab);
+    document.addEventListener("mouseup",release);
+    window.addEventListener("blur",release);
+    return()=>{
+      document.removeEventListener("mousedown",grab);
+      document.removeEventListener("mouseup",release);
+      window.removeEventListener("blur",release);
+    };
+  },[]);
 
   if(!introDone) return <LoadingScreen onBegin={()=>setIntroDone(true)} volume={volume} muted={muted}
     onVolume={setVolume} onMute={()=>setMuted(m=>!m)} onUnlockAudio={unlockAudio}/>;
@@ -1025,6 +1131,11 @@ export default function App(){
       </div>
     );
   }
+
+  // ── Story / how-to-play intro ────────────────────────────
+  // Runs once per device after setup, before the first round — separate from the
+  // loading-screen intro, and independent per player (each can skip on their own).
+  if(showingStory) return <IntroStory onDone={()=>setStoryDone(true)}/>;
 
   // ── Game over ───────────────────────────────────────────
   if(state.phase==="gameover"){
