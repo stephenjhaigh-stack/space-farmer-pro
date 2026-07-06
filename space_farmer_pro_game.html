@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Space Farmer Pro — Game Tester</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<!-- Firebase (compat build — works with plain <script> tags, no bundler needed) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#060911;color:#c0ccdd;font-family:monospace;font-size:13px}
+button{font-family:monospace;cursor:pointer}
+input{font-family:monospace}
+select{font-family:monospace}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:#0a0f1c}
+::-webkit-scrollbar-thumb{background:#1e3a5a;border-radius:2px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const{useState,useReducer,useMemo,useEffect,useRef}=React;
+
+// ─── FIREBASE (remote play) ──────────────────────────────
+// Paste your own project's config here — see the Firebase Console:
+// console.firebase.google.com → your project → gear icon → Project settings →
+// scroll to "Your apps" → the </> (web) icon → register an app → copy this object.
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyC3pLn9WEYkudlriF6PTPtUupEEtLM30Ks",
+  authDomain: "space-farmer-pro.firebaseapp.com",
+  projectId: "space-farmer-pro",
+  storageBucket: "space-farmer-pro.firebasestorage.app",
+  messagingSenderId: "1061049568693",
+  appId: "1:1061049568693:web:a9644f5a0b662a73285dfc",
+};
+let _fbDb = null;
+function getDb() {
+  if (!_fbDb) {
+    const app = firebase.apps.length ? firebase.app() : firebase.initializeApp(FIREBASE_CONFIG);
+    _fbDb = firebase.firestore();
+  }
+  return _fbDb;
+}
+function makeRoomCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I — easier to read aloud
+  let code = "";
+  for (let i = 0; i < 5; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+}
+
+// ── Audio tracks (audio/ folder next to this file) ─────────
+const AUDIO_INTRO="audio/intro-theme.mp3";
+const AUDIO_GAMEPLAY="audio/gameplay-theme.mp3";
+const CURSOR_HAND='url("data:image/png;base64,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") 12 4, auto';
+
+// ─── GRID ────────────────────────────────────────────────
+const tR=id=>Math.floor((id-1)/3),tC=id=>(id-1)%3,tID=(r,c)=>r*3+c+1;
+const ortho=id=>[[tR(id)-1,tC(id)],[tR(id)+1,tC(id)],[tR(id),tC(id)-1],[tR(id),tC(id)+1]].filter(([r,c])=>r>=0&&r<3&&c>=0&&c<3).map(([r,c])=>tID(r,c));
+const all8=id=>{const o=[];for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){if(!dr&&!dc)continue;const nr=tR(id)+dr,nc=tC(id)+dc;if(nr>=0&&nr<3&&nc>=0&&nc<3)o.push(tID(nr,nc));}return o;};
+const adjDir=(id,dir)=>{const m={up:[-1,0],down:[1,0],left:[0,-1],right:[0,1]};const[dr,dc]=m[dir]||[0,0];const nr=tR(id)+dr,nc=tC(id)+dc;return(nr>=0&&nr<3&&nc>=0&&nc<3)?tID(nr,nc):null;};
+
+// ─── DATA ────────────────────────────────────────────────
+const SUN=[
+  {core:[1,2,4,5],edge:[3,6,7,8],shadow:[9],label:"Top-Left (R1/R5)"},
+  {core:[2,3,5,6],edge:[1,4,8,9],shadow:[7],label:"Top-Right (R2/R6)"},
+  {core:[5,6,8,9],edge:[2,3,4,7],shadow:[1],label:"Bottom-Right (R3)"},
+  {core:[4,5,7,8],edge:[1,2,6,9],shadow:[3],label:"Bottom-Left (R4)"},
+];
+const DEMAND=[null,{g:3,gr:0,ex:0},{g:3,gr:1,ex:0},{g:2,gr:2,ex:1},{g:2,gr:3,ex:1},{g:2,gr:3,ex:2},{g:3,gr:3,ex:3}];
+// Minimum guaranteed seed cards (by crop) that must appear in each round's draft row.
+const DRAFT_MIN=[null,{g:4,gr:0,ex:0},{g:4,gr:1,ex:0},{g:3,gr:1,ex:1},{g:3,gr:2,ex:1},{g:3,gr:2,ex:1},{g:4,gr:2,ex:1}];
+const shuf=a=>{const b=[...a];for(let i=b.length-1;i>0;i--){const j=0|Math.random()*(i+1);[b[i],b[j]]=[b[j],b[i]];}return b;};
+const CC={g:"#4ade80",gr:"#facc15",ex:"#c084fc"};
+const CL={g:"Greens",gr:"Grain",ex:"Exotics"};
+
+const makeSeeds=()=>shuf([
+  ...Array(24).fill(0).map((_,i)=>({id:`g${i}`,t:"seed",crop:"g",lr:1,wr:1,yld:1,name:"Greens"})),
+  ...[["L1W1",1,1],["L1W1",1,1],["L1W1",1,1],["L1W2",1,2],["L1W2",1,2],["L2W1",2,1],["L2W1",2,1],["L2W1",2,1],["L2W2",2,2],["L2W2",2,2]]
+    .map(([n,lr,wr],i)=>({id:`gr${i}`,t:"seed",crop:"gr",lr,wr,yld:2,name:`Grain ${n}`})),
+  ...["L2W2","L2W2","L2W2","L3W2"].map((n,i)=>({id:`ex${i}`,t:"seed",crop:"ex",lr:n==="L3W2"?3:2,wr:2,yld:3,name:`Exotic ${n}`})),
+]);
+const makeHW=()=>shuf([
+  {id:"bm0",t:"hw",hwt:"bMirror",name:"Basic Mirror",avail:1,desc:"+1L→1 adj"},
+  {id:"bm1",t:"hw",hwt:"bMirror",name:"Basic Mirror",avail:1,desc:"+1L→1 adj"},
+  {id:"bm2",t:"hw",hwt:"bMirror",name:"Basic Mirror",avail:1,desc:"+1L→1 adj"},
+  {id:"bm3",t:"hw",hwt:"bMirror",name:"Basic Mirror",avail:1,desc:"+1L→1 adj"},
+  {id:"um0",t:"hw",hwt:"uMirror",name:"Upg Mirror",avail:3,desc:"+1L→2 adj"},
+  {id:"um1",t:"hw",hwt:"uMirror",name:"Upg Mirror",avail:3,desc:"+1L→2 adj"},
+  {id:"bi0",t:"hw",hwt:"bIrrig",name:"Irrigator",avail:1,desc:"+1W self+ortho"},
+  {id:"bi1",t:"hw",hwt:"bIrrig",name:"Irrigator",avail:1,desc:"+1W self+ortho"},
+  {id:"bi2",t:"hw",hwt:"bIrrig",name:"Irrigator",avail:1,desc:"+1W self+ortho"},
+  {id:"bi3",t:"hw",hwt:"bIrrig",name:"Irrigator",avail:1,desc:"+1W self+ortho"},
+  {id:"ui0",t:"hw",hwt:"uIrrig",name:"Upg Irrigator",avail:3,desc:"+1W self+all8"},
+  {id:"ui1",t:"hw",hwt:"uIrrig",name:"Upg Irrigator",avail:3,desc:"+1W self+all8"},
+  {id:"cr0",t:"hw",hwt:"cReg",name:"Climate Reg",avail:5,desc:"+1L+1W all8"},
+  {id:"cr1",t:"hw",hwt:"cReg",name:"Climate Reg",avail:5,desc:"+1L+1W all8"},
+]);
+const makeEvents=()=>shuf([
+  {id:"e1",et:"meteor",icon:"☄️",name:"Meteorite Strike",desc:"Random tile destroyed — 3-round damage."},
+  {id:"e2",et:"meteor",icon:"☄️",name:"Meteorite Strike",desc:"Random tile destroyed — 3-round damage."},
+  {id:"e3",et:"meteor",icon:"☄️",name:"Meteorite Strike",desc:"Random tile destroyed — 3-round damage."},
+  {id:"e4",et:"pressure",icon:"📡",name:"Emergency Transmission",desc:"Greens demand +4 this round."},
+  {id:"e5",et:"pressure",icon:"🍞",name:"Famine Crisis",desc:"Exotic demand doubles this round."},
+  {id:"e6",et:"pressure",icon:"👥",name:"Population Surge",desc:"Greens demand +2 this round."},
+  {id:"e7",et:"bonus",icon:"🌾",name:"Bumper Crop",desc:"All harvests +1 extra crop."},
+  {id:"e8",et:"bonus",icon:"⚡",name:"Tech Breakthrough",desc:"HW free in draft. +1 card."},
+  {id:"e9",et:"bonus",icon:"🌌",name:"Calm Orbit",desc:"No negatives. Free reposition."},
+  {id:"e10",et:"wildcard",icon:"📦",name:"Supply Shortage",desc:"Seeds only in draft this round."},
+  {id:"e11",et:"wildcard",icon:"☀️",name:"Solar Flare",desc:"+1L all tiles. Mirrors malfunction."},
+  {id:"e12",et:"wildcard",icon:"🚫",name:"Trade Embargo",desc:"No trading this round."},
+]);
+
+// ─── COMPUTE ─────────────────────────────────────────────
+function computeTiles(player,sunPos,efx){
+  efx=efx||{};
+  const sun=SUN[sunPos%4];const v={};
+  for(let t=1;t<=9;t++){let l=sun.core.includes(t)?2:sun.edge.includes(t)?1:0;if(efx.solarFlare)l=Math.min(3,l+1);v[t]={l,w:0};}
+  player.grid.forEach(tile=>{
+    if(tile.dmg>0||!tile.c||tile.c.t!=="hw")return;
+    const{hwt}=tile.c.card,id=tile.id;
+    if(hwt==="bIrrig"){v[id].w+=1;ortho(id).forEach(n=>v[n].w+=1);}
+    else if(hwt==="uIrrig"){v[id].w+=1;all8(id).forEach(n=>v[n].w+=1);}
+    else if(hwt==="bMirror"&&!efx.mirrorsDown){const tgt=adjDir(id,(tile.c.dirs||[])[0]);if(tgt)v[tgt].l=Math.min(3,v[tgt].l+1);}
+    else if(hwt==="uMirror"&&!efx.mirrorsDown){(tile.c.dirs||[]).slice(0,2).forEach(d=>{const tgt=adjDir(id,d);if(tgt)v[tgt].l=Math.min(3,v[tgt].l+1);});}
+    else if(hwt==="cReg"){v[id].l=Math.min(3,v[id].l+1);v[id].w+=1;all8(id).forEach(n=>{v[n].l=Math.min(3,v[n].l+1);v[n].w+=1;});}
+  });
+  if(player.colony.agriWater)v[player.colony.agriWater].w+=1;
+  return v;
+}
+function calcDP(p,vit){
+  const ls=p.colony.ls.filter(Boolean).length,ag=p.colony.ag.filter(Boolean).length,re=p.colony.re.filter(Boolean).length;
+  let dp=ls*1-(6-ls)*2+ag*2-(4-ag)*2+re*4-(3-re)*3;
+  if(ls>0&&ag>0&&re>0)dp+=5;
+  dp+=(p.roundWins||0)*2;
+  return Math.floor(dp*(vit>=7?1:vit>=4?0.5:0.25));
+}
+
+// ─── STATE ───────────────────────────────────────────────
+const blankEfx=()=>({bumper:false,solarFlare:false,mirrorsDown:false,embargo:false,seedsOnly:false,extraCard:false,freeHW:false,demG:0,demExDouble:false});
+function makeState(names){
+  return{phase:"event",round:1,sunPos:0,vit:10,
+    players:names.map((name,id)=>({id,name,
+      grid:Array.from({length:9},(_,i)=>({id:i+1,c:null,dmg:0})),
+      colony:{ls:[null,null,null,null,null,null],ag:[null,null,null,null],re:[null,null,null],agriWater:null},
+      stockpile:{g:0,gr:0,ex:0},hand:[],roundWins:0})),
+    seedDeck:makeSeeds(),hwDeck:makeHW(),evDeck:makeEvents(),
+    draft:[],draftOrder:names.map((_,i)=>i),draftIdx:0,passStreak:0,
+    event:null,efx:blankEfx(),meteorHit:null,eventDrawn:false,meteorResolved:false,
+    harvestResults:null,shipResult:null,harvestLeaders:[],outcome:null,
+    contribs:names.map((_,id)=>({id,ship:{g:0,gr:0,ex:0},invest:{g:0,gr:0,ex:0},done:false})),
+    contribIdx:0,contribsRevealed:false,
+    engIdx:0,tradeIdx:0,selCard:null,
+    log:["Mission launched."],gameoverMsg:null,winner:null,gameStarted:false,
+  };
+}
+const alog=(log,msg)=>[...log,msg].slice(-12);
+
+// Start-of-round setup: rotate the sun, tick down meteor damage, draw + resolve the event.
+// Runs every round including round 1 — not a player-triggered action.
+function startRound(s){
+  const sunPos=(s.round-1)%4;
+  let players=s.players.map(p=>({...p,grid:p.grid.map(t=>({...t,dmg:Math.max(0,t.dmg-1)}))}));
+  let log=alog(s.log,`R${s.round} ☀️ ${SUN[sunPos].label}`);
+  return{...s,sunPos,players,log,phase:"event",event:null,efx:blankEfx(),meteorHit:null,
+    eventDrawn:false,meteorResolved:false,harvestResults:null,shipResult:null};
+}
+
+// ─── REDUCER ─────────────────────────────────────────────
+function reducer(s,a){
+  switch(a.type){
+  case"RESET":return{...startRound(makeState(a.names)),gameStarted:true};
+  case"DRAW_EVENT":{
+    if(s.eventDrawn)return s;
+    const evDeck=[...s.evDeck];const event=evDeck.shift()||null;
+    let efx=blankEfx();let log=s.log;
+    if(event){
+      log=alog(log,`${event.icon} ${event.name}`);
+      if(event.id==="e4")efx={...efx,demG:4};if(event.id==="e5")efx={...efx,demExDouble:true};
+      if(event.id==="e6")efx={...efx,demG:2};if(event.id==="e7")efx={...efx,bumper:true};
+      if(event.id==="e8")efx={...efx,extraCard:true,freeHW:true};if(event.id==="e10")efx={...efx,seedsOnly:true};
+      if(event.id==="e11")efx={...efx,solarFlare:true,mirrorsDown:true};if(event.id==="e12")efx={...efx,embargo:true};
+    }
+    return{...s,evDeck,event,efx,meteorHit:null,meteorResolved:false,eventDrawn:true,log};
+  }
+  case"RESOLVE_METEOR":{
+    if(!s.event||s.event.et!=="meteor"||s.meteorResolved)return s;
+    const pi=0|Math.random()*s.players.length;
+    const free=s.players[pi].grid.filter(t=>t.dmg===0);
+    let meteorHit=null,players=s.players,log=s.log;
+    if(free.length){const hit=free[0|Math.random()*free.length];meteorHit={name:players[pi].name,tile:hit.id,had:!!hit.c};players=players.map((p,i)=>i!==pi?p:{...p,grid:p.grid.map(t=>t.id===hit.id?{...t,c:null,dmg:3}:t)});log=alog(log,`☄️ ${meteorHit.name} T${hit.id}!`);}
+    return{...s,players,meteorHit,meteorResolved:true,log};
+  }
+  case"DEAL_DRAFT":{
+    const n=s.players.length,v=s.vit;let count=v>=7?n*2+2:v>=4?n+2:n;if(s.efx.extraCard)count+=1;
+    const sd=[...s.seedDeck],hd=[...s.hwDeck];
+    const hasResearch=s.players.some(p=>p.colony.re.filter(Boolean).length>0);
+    const avHW=s.efx.seedsOnly?[]:hd.filter(h=>s.round>=h.avail&&!(v<=3&&h.avail>1)&&(h.hwt!=="cReg"||hasResearch));
+    const min=DRAFT_MIN[s.round]||{g:0,gr:0,ex:0};
+    const seedPicks=[];
+    for(const crop of["g","gr","ex"]){const need=min[crop]||0;seedPicks.push(...sd.filter(c=>c.crop===crop).slice(0,need));}
+    const pickedIds=new Set(seedPicks.map(c=>c.id));
+    const seedTarget=Math.max(count-avHW.length,seedPicks.length);
+    const remainder=sd.filter(c=>!pickedIds.has(c.id));
+    const reserve={g:0,gr:0,ex:0};
+    for(let fr=s.round+1;fr<=6;fr++){const fm=DRAFT_MIN[fr]||{g:0,gr:0,ex:0};reserve.g+=fm.g;reserve.gr+=fm.gr;reserve.ex+=fm.ex;}
+    const protectedIds=new Set();
+    for(const crop of["g","gr","ex"]){
+      const avail=remainder.filter(c=>c.crop===crop);
+      avail.slice(0,Math.min(reserve[crop]||0,avail.length)).forEach(c=>protectedIds.add(c.id));
+    }
+    const eligible=remainder.filter(c=>!protectedIds.has(c.id));
+    const extra=shuf(eligible).slice(0,Math.max(0,seedTarget-seedPicks.length));
+    const seedsPicked=[...seedPicks,...extra];
+    const picked=shuf([...avHW,...seedsPicked]);
+    const usedS=new Set(seedsPicked.map(c=>c.id));
+    const usedH=new Set(avHW.map(c=>c.id));
+    return{...s,draft:picked,seedDeck:sd.filter(c=>!usedS.has(c.id)),hwDeck:hd.filter(c=>!usedH.has(c.id)),draftIdx:0,passStreak:0,phase:"draft"};
+  }
+  case"PICK":{
+    const pi=s.draftOrder[s.draftIdx%s.draftOrder.length];const draft=s.draft.filter(c=>c.id!==a.card.id);
+    const players=s.players.map((p,i)=>i!==pi?p:{...p,hand:[...p.hand,a.card]});
+    const next=s.draftIdx+1;const done=!draft.length;
+    return{...s,draft,players,draftIdx:next,passStreak:0,selCard:null,phase:done?(s.efx.embargo?"engineering":"trade"):"draft",tradeIdx:0,engIdx:0,log:alog(s.log,`${s.players[pi].name}: ${a.card.name}`)};
+  }
+  case"SKIP_PICK":{const next=s.draftIdx+1;const passStreak=(s.passStreak||0)+1;const done=!s.draft.length||passStreak>=s.draftOrder.length;return{...s,draftIdx:next,passStreak,selCard:null,phase:done?(s.efx.embargo?"engineering":"trade"):"draft",tradeIdx:0,engIdx:0};}
+  case"NEXT_TRADE":{const next=s.tradeIdx+1;if(next>=s.players.length)return{...s,phase:"engineering",engIdx:0,tradeIdx:0};return{...s,tradeIdx:next};}
+  case"SKIP_TRADE":return{...s,phase:"engineering",engIdx:0,tradeIdx:0};
+  case"SEL_CARD":return{...s,selCard:s.selCard&&s.selCard.id===a.card.id?null:a.card};
+  case"PLACE":{
+    const pi=s.engIdx,card=s.selCard;if(!card)return s;
+    const tile=s.players[pi].grid.find(t=>t.id===a.tileId);if(!tile||tile.c||tile.dmg>0)return s;
+    const dirs=card.hwt==="uMirror"?["up","right"]:["up"];
+    const c=card.t==="seed"?{t:"seed",card,dormant:0}:{t:"hw",card,dirs};
+    const players=s.players.map((p,i)=>i!==pi?p:{...p,hand:p.hand.filter(h=>h.id!==card.id),grid:p.grid.map(t=>t.id===a.tileId?{...t,c}:t)});
+    return{...s,players,selCard:null,log:alog(s.log,`${s.players[pi].name}:${card.name}→T${a.tileId}`)};
+  }
+  case"LIFT":{
+    const pi=s.engIdx,tile=s.players[pi].grid.find(t=>t.id===a.tileId);if(!tile||!tile.c)return s;
+    const isHW=tile.c.t==="hw";
+    if(!isHW&&(tile.c.dormant||0)>0)return s;
+    const players=s.players.map((p,i)=>i!==pi?p:{...p,hand:[...p.hand,tile.c.card],grid:p.grid.map(t=>t.id===a.tileId?{...t,c:null}:t)});
+    return{...s,players,selCard:null};
+  }
+  case"SET_DIR":{
+    const pi=s.engIdx;
+    const players=s.players.map((p,i)=>i!==pi?p:{...p,grid:p.grid.map(t=>t.id===a.tileId&&t.c&&t.c.t==="hw"?{...t,c:{...t.c,dirs:a.dirs}}:t)});
+    return{...s,players};
+  }
+  case"NEXT_ENG":{const next=s.engIdx+1;if(next>=s.players.length)return{...s,phase:"harvest",engIdx:0,selCard:null};return{...s,engIdx:next,selCard:null};}
+  case"HARVEST":{
+    const hLog=[];
+    const players=s.players.map(p=>{
+      const tv=computeTiles(p,s.sunPos,s.efx);const gained={g:0,gr:0,ex:0};
+      const grid=p.grid.map(tile=>{
+        if(!tile.c||tile.c.t!=="seed"||tile.dmg>0)return tile;
+        const sd=tile.c.card,{l,w}=tv[tile.id];
+        if(l>=sd.lr&&w>=sd.wr){const yld=sd.yld+(s.efx.bumper?1:0);gained[sd.crop]+=yld;hLog.push({player:p.name,tile:tile.id,name:sd.name,ok:true,yld,l,w,lr:sd.lr,wr:sd.wr});return{...tile,c:null};}
+        const dormant=(tile.c.dormant||0)+1;hLog.push({player:p.name,tile:tile.id,name:sd.name,ok:false,dormant,died:dormant>=3,l,w,lr:sd.lr,wr:sd.wr});
+        return dormant>=3?{...tile,c:null}:{...tile,c:{...tile.c,dormant}};
+      });
+      return{...p,stockpile:{g:p.stockpile.g+gained.g,gr:p.stockpile.gr+gained.gr,ex:p.stockpile.ex+gained.ex},grid};
+    });
+    const counts=players.map(p=>hLog.filter(h=>h.player===p.name&&h.ok).length);
+    const maxCount=Math.max(0,...counts);
+    const harvestLeaders=maxCount>0?counts.map((c,i)=>c===maxCount?i:-1).filter(i=>i>=0):[];
+    const leadPlayers=players.map((p,i)=>harvestLeaders.includes(i)?{...p,roundWins:(p.roundWins||0)+1}:p);
+    const leadMsg=harvestLeaders.length?` · 🏆${harvestLeaders.map(i=>players[i].name).join(",")}(${maxCount})`:"";
+    return{...s,players:leadPlayers,harvestResults:hLog,harvestLeaders,phase:"contribute",contribs:s.players.map(p=>({id:p.id,ship:{g:0,gr:0,ex:0},invest:{g:0,gr:0,ex:0},done:false})),contribIdx:0,contribsRevealed:false,log:alog(s.log,`Harvest: ${hLog.filter(h=>h.ok).length} success${leadMsg}`)};
+  }
+  case"SUBMIT":{
+    const contribs=s.contribs.map(c=>c.id===a.id?{...c,...a.data,done:true}:c);
+    return{...s,contribs,contribIdx:s.contribIdx+1};
+  }
+  case"REVEAL":{
+    const tot={g:0,gr:0,ex:0};s.contribs.forEach(c=>{tot.g+=c.ship.g;tot.gr+=c.ship.gr;tot.ex+=c.ship.ex;});
+    const base=DEMAND[s.round]||{g:0,gr:0,ex:0};
+    const dem={g:base.g+s.efx.demG,gr:base.gr,ex:s.efx.demExDouble?base.ex*2:base.ex};
+    const mG=tot.g>=dem.g,mGr=tot.gr>=dem.gr,mEx=tot.ex>=dem.ex,allMet=mG&&mGr&&mEx;
+    let vd=0;if(!allMet){vd=-1;if(!mG&&dem.g>0)vd--;if(!mGr&&dem.gr>0)vd--;if(!mEx&&dem.ex>0)vd--;vd=Math.max(-4,vd);}
+    else if((tot.g-dem.g)+(tot.gr-dem.gr)+(tot.ex-dem.ex)>0)vd=1;
+    const newVit=Math.min(10,Math.max(0,s.vit+vd));
+    let players=s.players.map(p=>{
+      const c=s.contribs.find(x=>x.id===p.id);
+      let sp={g:p.stockpile.g-c.ship.g,gr:p.stockpile.gr-c.ship.gr,ex:p.stockpile.ex-c.ship.ex};
+      let col={...p.colony,ls:[...p.colony.ls],ag:[...p.colony.ag],re:[...p.colony.re]};
+      let{g:ig,gr:igr,ex:iex}=c.invest;
+      while(ig>0){const i=col.ls.findIndex(x=>!x);if(i<0)break;col.ls[i]="x";sp.g--;ig--;}
+      while(igr>0){const i=col.ag.findIndex(x=>!x);if(i<0)break;col.ag[i]="x";if(i===1&&!col.agriWater)col.agriWater=5;sp.gr--;igr--;}
+      while(iex>0){const i=col.re.findIndex(x=>!x);if(i<0)break;col.re[i]="x";sp.ex--;iex--;}
+      return{...p,stockpile:sp,colony:col};
+    });
+    const shipResult={tot,dem,mG,mGr,mEx,allMet,vd,newVit};
+    const log=alog(s.log,`G${tot.g}/${dem.g} Gr${tot.gr}/${dem.gr} Ex${tot.ex}/${dem.ex} Vit${vd>=0?"+":""}${vd}=${newVit}`);
+    if(newVit<=0)return{...s,players,contribsRevealed:true,shipResult,vit:0,log,phase:"gameover",outcome:"collapse",gameoverMsg:"Earth collapsed. Everyone loses."};
+    return{...s,players,contribsRevealed:true,shipResult,vit:newVit,log};
+  }
+  case"END_ROUND":{
+    for(const p of s.players){if(p.colony.ls.every(Boolean)&&p.colony.ag.every(Boolean)&&p.colony.re.every(Boolean))return{...s,phase:"gameover",outcome:"selfsuff",gameoverMsg:`${p.name}: Self-Sufficiency — Instant Win!`,winner:p.name};}
+    if(s.round>=6){const sc=s.players.map(p=>({name:p.name,dp:calcDP(p,s.vit)})).sort((a,b)=>b.dp-a.dp);return{...s,phase:"gameover",outcome:"earthsaved",gameoverMsg:`Game over! ${sc.map(x=>`${x.name}: ${x.dp}DP`).join(" · ")}`,winner:sc[0].name};}
+    const leaders=s.harvestLeaders||[];
+    const rest=s.players.map((_,i)=>i).filter(i=>!leaders.includes(i));
+    return startRound({...s,round:s.round+1,contribIdx:0,contribsRevealed:false,selCard:null,engIdx:0,tradeIdx:0,draftOrder:[...leaders,...rest],contribs:s.players.map(p=>({id:p.id,ship:{g:0,gr:0,ex:0},invest:{g:0,gr:0,ex:0},done:false}))});
+  }
+  // Wholesale replace — used when a Firestore snapshot arrives from a remote peer.
+  // Not something a player triggers; it's how the two browsers stay in sync.
+  case"__SET_REMOTE_STATE__":return a.state;
+  default:return s;
+  }
+}
+
+// ─── STYLE CONSTANTS ─────────────────────────────────────
+const PIXEL="'Press Start 2P',monospace";
+const P={background:"rgba(10,15,28,0.88)",border:"2px solid #1e2d3d",borderRadius:2,padding:12,marginBottom:8};
+const BTN={fontFamily:PIXEL,fontSize:10,lineHeight:1.6,background:"#134e4a",color:"#99f6e4",border:"2px solid #0d9488",borderRadius:2,padding:"10px 14px",cursor:"pointer",boxShadow:"3px 3px 0 #042f2e",letterSpacing:0.5};
+const BTN2={fontFamily:PIXEL,fontSize:8,lineHeight:1.6,background:"#1e3a5a",color:"#93c5fd",border:"2px solid #1d4ed8",borderRadius:2,padding:"7px 10px",cursor:"pointer",boxShadow:"2px 2px 0 #0c1e3a"};
+const H2={fontFamily:PIXEL,fontSize:12,fontWeight:"normal",color:"#40d9c4",marginBottom:10,letterSpacing:0.5,lineHeight:1.6};
+const LBL={fontSize:11,color:"#607890",letterSpacing:1,textTransform:"uppercase"};
+const INP={background:"#0a0f1c",color:"#c0ccdd",border:"1px solid #1e2d3d",borderRadius:2,padding:"8px 10px",fontFamily:"monospace",fontSize:13,width:"100%",marginBottom:6};
+
+// ─── COMPONENTS ──────────────────────────────────────────
+function VBar({v}){
+  const col=v>=7?"#22c55e":v>=4?"#eab308":v>=1?"#f97316":"#ef4444";
+  return <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+    <span style={{fontSize:10,color:"#607890",letterSpacing:2}}>VITALITY</span>
+    <div style={{display:"flex",gap:2}}>{Array.from({length:10},(_,i)=><div key={i} style={{width:12,height:12,borderRadius:2,background:i<v?col:"#1a2030"}}/>)}</div>
+    <span style={{fontSize:11,color:col,fontWeight:"bold"}}>{v}/10</span>
+  </div>;
+}
+
+// ── 8-bit pixel spaceship ─────────────────────────────────
+const SHIP_SPRITE=["..ccc..",".ccccc.",".cabac.",".cabac.","ccabacc","ccayacc","ccabacc","rcabacr","rr.b.rr","..fff.."];
+const SHIP_COLORS={c:"#1e3a8a",a:"#e2e8f0",b:"#60a5fa",y:"#fde047",r:"#f97316",f:"#fb923c"};
+function PixelShip({size=12,still=false}){
+  return <div style={{animation:still?undefined:"sfp-bob 2.2s ease-in-out infinite",display:"inline-block"}}>
+    <div style={{display:"grid",gridTemplateColumns:`repeat(7,${size}px)`,gridTemplateRows:`repeat(${SHIP_SPRITE.length},${size}px)`,gap:1}}>
+      {SHIP_SPRITE.flatMap((row,ri)=>row.split("").map((ch,ci)=><div key={`${ri}-${ci}`} style={{width:size,height:size,background:ch==="."?"transparent":SHIP_COLORS[ch],animation:!still&&ch==="f"?"sfp-flame 0.3s steps(2) infinite":undefined,boxShadow:ch==="y"?"0 0 4px #fde047":undefined}}/>))}
+    </div>
+  </div>;
+}
+function Starfield(){
+  return <div style={{position:"fixed",inset:0,zIndex:0,pointerEvents:"none",opacity:0.7,
+    backgroundImage:"radial-gradient(1px 1px at 20px 30px,#fff,transparent),radial-gradient(1px 1px at 90px 120px,#fff,transparent),radial-gradient(1.5px 1.5px at 160px 60px,#fde047,transparent),radial-gradient(1px 1px at 210px 200px,#fff,transparent),radial-gradient(1px 1px at 55px 190px,#fff,transparent),radial-gradient(1.5px 1.5px at 260px 40px,#60a5fa,transparent)",
+    backgroundSize:"300px 300px",backgroundRepeat:"repeat",animation:"sfp-stars 90s linear infinite"}}/>;
+}
+function VolumeControl({volume,muted,onVolume,onMute}){
+  return <div style={{display:"flex",alignItems:"center",gap:6}}>
+    <span onClick={onMute} style={{cursor:"pointer",fontSize:15}}>{muted||volume===0?"🔇":volume<0.5?"🔉":"🔊"}</span>
+    <input type="range" min={0} max={1} step={0.05} value={muted?0:volume} onChange={e=>onVolume(+e.target.value)} style={{width:70,accentColor:"#40d9c4"}}/>
+  </div>;
+}
+function LoadingScreen({onBegin,volume,muted,onVolume,onMute,onUnlockAudio}){
+  const[slid,setSlid]=useState(false);
+  useEffect(()=>{
+    if(!document.getElementById("sfp-pixel-font")){
+      const link=document.createElement("link");link.id="sfp-pixel-font";link.rel="stylesheet";
+      link.href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap";
+      document.head.appendChild(link);
+    }
+    if(!document.getElementById("sfp-anim-style")){
+      const style=document.createElement("style");style.id="sfp-anim-style";
+      style.textContent=`@keyframes sfp-slidedown{from{transform:translateY(-100%);}to{transform:translateY(0);}}
+        @keyframes sfp-bob{0%,100%{transform:translateY(0);}50%{transform:translateY(-8px);}}
+        @keyframes sfp-flame{0%{opacity:1;}100%{opacity:0.4;}}
+        @keyframes sfp-blink{0%,100%{opacity:1;}50%{opacity:0.2;}}
+        @keyframes sfp-stars{from{background-position:0 0;}to{background-position:0 -1000px;}}
+        button:active{transform:translate(2px,2px);box-shadow:none!important;}
+        ::selection{background:#0d9488;color:#02040a;}
+        *{cursor:${CURSOR_HAND} !important;}
+        input[type="text"]{cursor:text !important;}`;
+      document.head.appendChild(style);
+    }
+    const t=setTimeout(()=>setSlid(true),40);
+    return()=>clearTimeout(t);
+  },[]);
+  const starBg={backgroundImage:"radial-gradient(1px 1px at 20px 30px,#fff,transparent),radial-gradient(1px 1px at 90px 120px,#fff,transparent),radial-gradient(1.5px 1.5px at 160px 60px,#fde047,transparent),radial-gradient(1px 1px at 210px 200px,#fff,transparent),radial-gradient(1px 1px at 55px 190px,#fff,transparent),radial-gradient(1.5px 1.5px at 260px 40px,#60a5fa,transparent)",backgroundSize:"300px 300px",backgroundRepeat:"repeat",animation:"sfp-stars 40s linear infinite"};
+  return <div onClick={onUnlockAudio} style={{position:"fixed",inset:0,background:"#02040a",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",transform:"translateY(-100%)",animation:slid?"sfp-slidedown 800ms cubic-bezier(.2,.7,.3,1) forwards":undefined,zIndex:50,fontFamily:"monospace"}}>
+    <div style={{position:"absolute",inset:0,...starBg}}/>
+    <div style={{position:"absolute",top:16,right:20}}><VolumeControl volume={volume} muted={muted} onVolume={onVolume} onMute={onMute}/></div>
+    <div style={{position:"relative",textAlign:"center"}}>
+      <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:22,color:"#40d9c4",letterSpacing:2,textShadow:"3px 3px 0 #134e4a",marginBottom:8}}>SPACE</div>
+      <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:22,color:"#fde047",letterSpacing:2,textShadow:"3px 3px 0 #a16207",marginBottom:28}}>FARMER PRO</div>
+      <div style={{marginBottom:28}}><PixelShip/></div>
+      <button onClick={onBegin} style={{fontFamily:"'Press Start 2P',monospace",fontSize:13,color:"#99f6e4",background:"#134e4a",border:"2px solid #0d9488",borderRadius:2,padding:"14px 22px",cursor:"pointer",animation:"sfp-blink 1.6s ease-in-out infinite",letterSpacing:1}}>▶ BEGIN MISSION</button>
+      <div style={{color:"#374151",fontSize:11,marginTop:16}}>Earth is dying. You are its last hope.</div>
+    </div>
+  </div>;
+}
+function ConnectScreen({onLocal,onCreate,onJoin,volume,muted,onVolume,onMute}){
+  const[mode,setMode]=useState(null); // null | "join"
+  const[codeInput,setCodeInput]=useState("");
+  return <div style={{background:"#02040a",minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:16,position:"relative"}}>
+    <Starfield/>
+    <div style={{position:"absolute",top:16,right:20}}><VolumeControl volume={volume} muted={muted} onVolume={onVolume} onMute={onMute}/></div>
+    <div style={{...P,width:"100%",maxWidth:420,border:"2px solid #134e4a",boxShadow:"0 0 24px rgba(19,78,74,0.4)",position:"relative"}}>
+      <div style={{textAlign:"center",marginBottom:22}}>
+        <div style={{fontFamily:PIXEL,fontSize:13,color:"#40d9c4",letterSpacing:1,lineHeight:1.8}}>HOW ARE YOU<br/>PLAYING?</div>
+      </div>
+      {mode===null&&<>
+        <button onClick={onLocal} style={{...BTN,width:"100%",marginBottom:10}}>🖥️ Same Device (Hotseat)</button>
+        <button onClick={onCreate} style={{...BTN,width:"100%",marginBottom:10,background:"#0d3d38"}}>🌍 Create Online Room</button>
+        <button onClick={()=>setMode("join")} style={{...BTN,width:"100%",background:"#0d3d38"}}>🔑 Join Online Room</button>
+        <div style={{fontSize:10,color:"#4b5563",marginTop:14,lineHeight:1.6}}>Online play is built for two people, each on their own device. Same-device hotseat still supports 2-4 players.</div>
+      </>}
+      {mode==="join"&&<>
+        <div style={{fontSize:11,color:"#607890",marginBottom:8}}>Enter the room code your friend sent you:</div>
+        <input value={codeInput} onChange={e=>setCodeInput(e.target.value.toUpperCase().slice(0,5))}
+          style={{...INP,textAlign:"center",fontSize:20,letterSpacing:6,marginBottom:10}} placeholder="ABCDE"/>
+        <button onClick={()=>onJoin(codeInput)} disabled={codeInput.length<5} style={{...BTN,width:"100%",opacity:codeInput.length<5?0.4:1,cursor:codeInput.length<5?"default":"pointer"}}>Join →</button>
+        <button onClick={()=>setMode(null)} style={{...BTN2,width:"100%",marginTop:8}}>← Back</button>
+      </>}
+    </div>
+  </div>;
+}
+function RoomWaiting({roomCode,volume,muted,onVolume,onMute}){
+  return <div style={{background:"#02040a",minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:16,position:"relative"}}>
+    <Starfield/>
+    <div style={{position:"absolute",top:16,right:20}}><VolumeControl volume={volume} muted={muted} onVolume={onVolume} onMute={onMute}/></div>
+    <div style={{...P,width:"100%",maxWidth:420,textAlign:"center",border:"2px solid #134e4a"}}>
+      <div style={{fontFamily:PIXEL,fontSize:12,color:"#40d9c4",marginBottom:16,lineHeight:1.8}}>WAITING FOR HOST</div>
+      <div style={{color:"#607890",fontSize:12,marginBottom:16}}>You're connected to room <b style={{color:"#facc15"}}>{roomCode}</b>. The game will appear as soon as your friend finishes setting it up.</div>
+      <PixelShip/>
+    </div>
+  </div>;
+}
+function SDial({pos}){
+  const sun=SUN[pos%4];
+  return <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:5,width:"100%",maxWidth:180}}>
+    {[1,2,3,4,5,6,7,8,9].map(t=>{
+      const type=sun.core.includes(t)?"core":sun.edge.includes(t)?"edge":"shadow";
+      return <div key={t} style={{background:type==="core"?"rgba(234,179,8,0.25)":type==="edge"?"rgba(234,179,8,0.08)":"rgba(8,12,20,0.9)",border:type==="core"?"1px solid rgba(253,224,71,0.4)":"1px solid transparent",borderRadius:2,textAlign:"center",padding:"7px 0",fontSize:14,color:type==="core"?"#fde047":type==="edge"?"#78716c":"#2d3748",fontWeight:"bold"}}>{t}</div>;
+    })}
+  </div>;
+}
+
+function MeteorReveal({meteorHit,meteorResolved,players}){
+  const[stage,setStage]=useState("idle");
+  const[flickName,setFlickName]=useState("");
+  const[flickTile,setFlickTile]=useState(1);
+  useEffect(()=>{
+    if(!meteorResolved){setStage("idle");return;}
+    setStage("player");
+    let n=0;
+    const iv1=setInterval(()=>{
+      n++;setFlickName(players[0|Math.random()*players.length].name);
+      if(n>=8){
+        clearInterval(iv1);setStage("tile");
+        let m=0;
+        const iv2=setInterval(()=>{
+          m++;setFlickTile(1+(0|Math.random()*9));
+          if(m>=8){clearInterval(iv2);setStage("done");}
+        },90);
+      }
+    },90);
+    return()=>clearInterval(iv1);
+  },[meteorResolved]);
+  if(stage==="idle")return null;
+  return <div style={{marginTop:8,padding:8,background:"rgba(127,29,29,0.15)",border:"1px solid #7f1d1d",borderRadius:2}}>
+    <div style={{fontSize:10,color:"#f87171",marginBottom:4}}>☄️ Impact roll</div>
+    <div style={{fontSize:12,color:"#fca5a5"}}>Player (d4): {stage==="player"?flickName:(meteorHit?meteorHit.name:"—")}</div>
+    <div style={{fontSize:12,color:"#fca5a5"}}>Zone (d10): {stage==="player"?"—":stage==="tile"?`T${flickTile}`:meteorHit?`T${meteorHit.tile}`:"10 (miss)"}</div>
+    {stage==="done"&&<div style={{fontSize:10,color:"#f87171",marginTop:4}}>{meteorHit?(meteorHit.had?"Contents destroyed. ":"Was empty. ")+"Zone blocked 3 rounds.":"Roll of 10 — miss, no effect."}</div>}
+  </div>;
+}
+function PGrid({player,sunPos,efx,isActive,selCard,onPlace,onLift,onSetDir}){
+  const tv=useMemo(()=>computeTiles(player,sunPos,efx||{}),[player,sunPos,efx]);
+  const sun=SUN[sunPos%4];
+  const[hoverId,setHoverId]=useState(null);
+  return <div>
+    <div style={{fontSize:10,color:isActive?"#40d9c4":"#607890",marginBottom:3}}>{isActive?"▶ ":""}{player.name}</div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:2}}>
+      {player.grid.map(tile=>{
+        const{l,w}=tv[tile.id];const dmg=tile.dmg>0;
+        const sT=sun.core.includes(tile.id)?"core":sun.edge.includes(tile.id)?"edge":"shadow";
+        const bg=dmg?"rgba(127,29,29,0.3)":sT==="core"?"rgba(120,80,0,0.15)":sT==="edge"?"rgba(20,28,45,0.9)":"rgba(8,12,20,0.9)";
+        const bc=dmg?"#7f1d1d":isActive&&selCard&&!tile.c&&!dmg?"#0d9488":"#1e2d3d";
+        const canLift=tile.c&&!dmg&&(tile.c.t==="hw"||(tile.c.dormant||0)===0);
+        const clickable=isActive&&((selCard&&!tile.c&&!dmg)||canLift);
+        return <div key={tile.id} onClick={()=>{if(!isActive)return;if(selCard&&!tile.c&&!dmg)onPlace(tile.id);else if(canLift)onLift(tile.id);}}
+          onMouseEnter={()=>setHoverId(tile.id)} onMouseLeave={()=>setHoverId(null)}
+          style={{background:bg,border:`1px solid ${bc}`,borderRadius:2,padding:"3px 4px",minHeight:60,cursor:clickable?"pointer":"default",position:"relative",boxSizing:"border-box"}}>
+          <div style={{fontSize:9,color:"#374151"}}>{tile.id}</div>
+          {dmg&&<div style={{color:"#f87171",fontSize:10}}>☄️{tile.dmg}r</div>}
+          {!dmg&&tile.c&&<div style={{marginTop:1}}>
+            {tile.c.t==="seed"&&<>
+              <div style={{fontSize:9,fontWeight:"bold",color:CC[tile.c.card.crop]}}>{tile.c.card.name}</div>
+              <div style={{fontSize:8,color:"#607890"}}>L{tile.c.card.lr}W{tile.c.card.wr}</div>
+              {(tile.c.dormant||0)>0&&<div style={{fontSize:8,color:"#f97316"}}>💤{tile.c.dormant}</div>}
+            </>}
+            {tile.c.t==="hw"&&<>
+              <div style={{fontSize:9,fontWeight:"bold",color:"#93c5fd"}}>{tile.c.card.name}</div>
+              {isActive&&(tile.c.card.hwt==="bMirror"||tile.c.card.hwt==="uMirror")&&
+                <div style={{display:"flex",gap:2,marginTop:1,flexWrap:"wrap"}}>
+                  {["up","right","down","left"].map((dir,i)=>{
+                    const sel=(tile.c.dirs||[]).includes(dir);
+                    return <button key={dir} onClick={e=>{e.stopPropagation();const cur=tile.c.dirs||[],max=tile.c.card.hwt==="uMirror"?2:1;const nd=sel?cur.filter(x=>x!==dir):[...cur,dir].slice(-max);onSetDir(tile.id,nd);}}
+                      style={{fontSize:8,padding:"0 2px",background:sel?"#854d0e":"#1e3a5a",color:sel?"#fde047":"#93c5fd",border:"none",borderRadius:2,cursor:"pointer"}}>{"URDL"[i]}</button>;
+                  })}
+                </div>
+              }
+            </>}
+          </div>}
+          {!dmg&&<div style={{position:"absolute",bottom:2,right:3,fontSize:9,display:"flex",gap:2}}>
+            <span style={{color:"#facc15"}}>☀{l}</span><span style={{color:"#60a5fa"}}>💧{w}</span>
+          </div>}
+          {hoverId===tile.id&&tile.c&&<div style={{position:"absolute",bottom:"calc(100% + 9px)",left:"50%",transform:"translateX(-50%)",background:"#0a0f1c",border:"1px solid #40d9c4",borderRadius:2,padding:"9px 11px",fontSize:12,color:"#c0ccdd",width:220,lineHeight:1.5,zIndex:200,textAlign:"left",boxShadow:"0 6px 16px rgba(0,0,0,0.6)",pointerEvents:"none"}}>
+            {tile.c.t==="hw"?hwFullDesc(tile.c.card):seedFullDesc(tile.c.card)}
+            <div style={{position:"absolute",top:"100%",left:"50%",transform:"translateX(-50%)",width:0,height:0,borderLeft:"6px solid transparent",borderRight:"6px solid transparent",borderTop:"6px solid #40d9c4"}}/>
+          </div>}
+        </div>;
+      })}
+    </div>
+  </div>;
+}
+
+function ColonyDisplay({player}){
+  const Track=({slots,dp,col,lbl})=><div style={{marginBottom:4}}>
+    <div style={{fontSize:9,color:col,marginBottom:2}}>{lbl} <span style={{color:"#607890"}}>×{dp}DP</span></div>
+    <div style={{display:"flex",gap:2}}>{slots.map((s,i)=><div key={i} style={{width:14,height:14,borderRadius:0,border:`1px solid ${s?"#4b5563":"#1e2d3d"}`,background:s?"#374151":"transparent",fontSize:8,display:"flex",alignItems:"center",justifyContent:"center",color:s?"#9ca3af":"transparent"}}>✓</div>)}</div>
+  </div>;
+  return <div>
+    <Track slots={player.colony.ls} dp={1} col="#4ade80" lbl="🌿 Life Support"/>
+    <Track slots={player.colony.ag} dp={2} col="#facc15" lbl="🌾 Agriculture"/>
+    <Track slots={player.colony.re} dp={4} col="#c084fc" lbl="✨ Research"/>
+    {player.colony.agriWater&&<div style={{fontSize:9,color:"#60a5fa"}}>★ +1W tile {player.colony.agriWater}</div>}
+  </div>;
+}
+
+const HW_FULL_DESC={
+  bMirror:"Basic Solar Mirror — redirects +1 Light onto one adjacent tile of your choice. Rotate it during Engineering to change which tile it lights up.",
+  uMirror:"Upgraded Solar Mirror — redirects +1 Light onto two different adjacent tiles at the same time.",
+  bIrrig:"Basic Irrigator — adds +1 Water to its own tile and every orthogonally adjacent tile (up to 5 tiles total).",
+  uIrrig:"Upgraded Irrigator — adds +1 Water to its own tile and all 8 surrounding tiles (up to 9 tiles total).",
+  cReg:"Climate Regulator — adds +1 Light and +1 Water to its own tile and every surrounding tile. Requires a Research colony slot filled before it can be drafted.",
+};
+function hwFullDesc(card){return HW_FULL_DESC[card.hwt]||card.desc;}
+function seedFullDesc(card){return `${CL[card.crop]} seed — needs Light ${card.lr}+ and Water ${card.wr}+ to mature. On success it yields ${card.yld} ${CL[card.crop]} into your stockpile; otherwise it stays dormant and dies after 3 consecutive failed rounds.`;}
+function HoverTip({text,children}){
+  const[show,setShow]=useState(false);
+  if(!text)return children;
+  return <div style={{position:"relative"}} onMouseEnter={()=>setShow(true)} onMouseLeave={()=>setShow(false)}>
+    {children}
+    {show&&<div style={{position:"absolute",bottom:"calc(100% + 9px)",left:"50%",transform:"translateX(-50%)",background:"#0a0f1c",border:"1px solid #40d9c4",borderRadius:2,padding:"9px 11px",fontSize:12,color:"#c0ccdd",width:230,lineHeight:1.5,zIndex:200,boxShadow:"0 6px 16px rgba(0,0,0,0.6)",pointerEvents:"none"}}>
+      {text}
+      <div style={{position:"absolute",top:"100%",left:"50%",transform:"translateX(-50%)",width:0,height:0,borderLeft:"6px solid transparent",borderRight:"6px solid transparent",borderTop:"6px solid #40d9c4"}}/>
+    </div>}
+  </div>;
+}
+function Chip({card,sel,onClick}){
+  const isSeed=card.t==="seed";
+  const bc=sel?"#0d9488":isSeed?CC[card.crop]:"#1e3a5a";
+  const bg=isSeed?(card.crop==="g"?"rgba(0,40,20,0.8)":card.crop==="gr"?"rgba(40,30,0,0.8)":"rgba(25,5,40,0.8)"):"rgba(0,15,40,0.8)";
+  const tip=isSeed?seedFullDesc(card):hwFullDesc(card);
+  return <HoverTip text={tip}>
+    <div onClick={onClick} style={{background:bg,border:`1px solid ${bc}`,borderRadius:2,padding:"8px 12px",cursor:"pointer",display:"inline-block",boxShadow:sel?`0 0 0 1px #0d9488`:"none",marginBottom:4}}>
+      <div style={{fontSize:12,fontWeight:"bold",color:isSeed?CC[card.crop]:"#93c5fd"}}>{card.name}</div>
+      <div style={{fontSize:11,color:"#607890",marginTop:2}}>{isSeed?`L${card.lr}W${card.wr}→${card.yld}`:card.desc}</div>
+    </div>
+  </HoverTip>;
+}
+
+function ContribForm({player,onSubmit}){
+  const[shown,setShown]=useState(false);
+  const[confirming,setConfirming]=useState(false);
+  const sp=player.stockpile;
+  const[ship,setShip]=useState({g:0,gr:0,ex:0});
+  const[inv,setInv]=useState({g:0,gr:0,ex:0});
+  const keep={g:sp.g-ship.g-inv.g,gr:sp.gr-ship.gr-inv.gr,ex:sp.ex-ship.ex-inv.ex};
+  const valid=keep.g>=0&&keep.gr>=0&&keep.ex>=0;
+  const adj=(type,k,delta)=>{
+    if(type==="s")setShip(o=>{const n={...o,[k]:Math.max(0,o[k]+delta)};return sp[k]-n[k]-inv[k]>=0?n:o;});
+    else setInv(o=>{const n={...o,[k]:Math.max(0,o[k]+delta)};return sp[k]-ship[k]-n[k]>=0?n:o;});
+  };
+  if(!shown)return <div style={{...P,textAlign:"center",padding:20}}>
+    <div style={{color:"#c0ccdd",fontWeight:"bold",marginBottom:4}}>{player.name}</div>
+    <div style={{color:"#607890",fontSize:11,marginBottom:12}}>Others look away from screen</div>
+    <button onClick={()=>setShown(true)} style={BTN}>🔓 Show My Screen</button>
+  </div>;
+  if(confirming)return <div style={P}>
+    <div style={{color:"#40d9c4",fontWeight:"bold",marginBottom:6}}>{player.name} — Confirm Allocation</div>
+    <div style={{fontSize:11,color:"#c0ccdd",lineHeight:1.8,marginBottom:12}}>
+      <div><span style={{color:"#22c55e"}}>→ Ship to Earth:</span> G{ship.g} Gr{ship.gr} Ex{ship.ex}</div>
+      <div><span style={{color:"#a855f7"}}>→ Invest in Colony:</span> G{inv.g} Gr{inv.gr} Ex{inv.ex}</div>
+      <div><span style={{color:"#607890"}}>→ Keep in Stockpile:</span> G{keep.g} Gr{keep.gr} Ex{keep.ex}</div>
+    </div>
+    <div style={{fontSize:10,color:"#f97316",marginBottom:12}}>This locks in once confirmed — check it before continuing.</div>
+    <div style={{display:"flex",gap:8}}>
+      <button onClick={()=>setConfirming(false)} style={{...BTN2,flex:1}}>← Back to edit</button>
+      <button onClick={()=>{onSubmit(player.id,{ship,invest:inv});setShown(false);setConfirming(false);setShip({g:0,gr:0,ex:0});setInv({g:0,gr:0,ex:0});}} style={{...BTN,flex:1}}>✅ Confirm & Lock In</button>
+    </div>
+  </div>;
+  return <div style={P}>
+    <div style={{color:"#40d9c4",fontWeight:"bold",marginBottom:6}}>{player.name} — Allocate Crops</div>
+    <div style={{fontSize:10,color:"#607890",marginBottom:6}}>Stock: G{sp.g} Gr{sp.gr} Ex{sp.ex}</div>
+    <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,marginBottom:8}}>
+      <thead><tr style={{borderBottom:"1px solid #1e2d3d"}}>
+        <th style={{textAlign:"left",color:"#607890",padding:"2px 4px",fontSize:9}}>Crop</th>
+        <th style={{color:"#607890",fontSize:9}}>Have</th>
+        <th style={{color:"#22c55e",fontSize:9}}>→Earth</th>
+        <th style={{color:"#a855f7",fontSize:9}}>→Colony</th>
+        <th style={{color:"#607890",fontSize:9}}>Keep</th>
+      </tr></thead>
+      <tbody>{["g","gr","ex"].map(k=><tr key={k} style={{borderBottom:"1px solid #0d1526"}}>
+        <td style={{padding:"3px 4px",color:CC[k]}}>{CL[k]}</td>
+        <td style={{textAlign:"center",color:"#c0ccdd"}}>{sp[k]}</td>
+        <td style={{padding:2}}><div style={{display:"flex",alignItems:"center",gap:3,justifyContent:"center"}}>
+          <button onClick={()=>adj("s",k,-1)} style={{background:"#1e2d3d",color:"#60a5fa",border:"none",borderRadius:2,width:16,height:16,cursor:"pointer"}}>-</button>
+          <span style={{color:"#4ade80",minWidth:14,textAlign:"center"}}>{ship[k]}</span>
+          <button onClick={()=>adj("s",k,1)} style={{background:"#1e2d3d",color:"#60a5fa",border:"none",borderRadius:2,width:16,height:16,cursor:"pointer"}}>+</button>
+        </div></td>
+        <td style={{padding:2}}><div style={{display:"flex",alignItems:"center",gap:3,justifyContent:"center"}}>
+          <button onClick={()=>adj("i",k,-1)} style={{background:"#1e2d3d",color:"#60a5fa",border:"none",borderRadius:2,width:16,height:16,cursor:"pointer"}}>-</button>
+          <span style={{color:"#c084fc",minWidth:14,textAlign:"center"}}>{inv[k]}</span>
+          <button onClick={()=>adj("i",k,1)} style={{background:"#1e2d3d",color:"#60a5fa",border:"none",borderRadius:2,width:16,height:16,cursor:"pointer"}}>+</button>
+        </div></td>
+        <td style={{textAlign:"center",color:keep[k]<0?"#f87171":"#607890"}}>{keep[k]}</td>
+      </tr>)}</tbody>
+    </table>
+    <div style={{fontSize:9,color:"#607890",marginBottom:6}}>Greens→Life Support · Grain→Agriculture · Exotics→Research</div>
+    <div style={{fontSize:10,color:"#c0ccdd",marginBottom:8}}>→Earth: G{ship.g} Gr{ship.gr} Ex{ship.ex} · →Colony: G{inv.g} Gr{inv.gr} Ex{inv.ex}</div>
+    <div style={{marginBottom:8,paddingTop:6,borderTop:"1px solid #1e2d3d"}}>
+      <div style={{fontSize:9,color:"#607890",marginBottom:4}}>Your Colony Board (before this round's investment):</div>
+      <ColonyDisplay player={player}/>
+    </div>
+    {!valid&&<div style={{color:"#f87171",fontSize:10,marginBottom:4}}>Over-allocated!</div>}
+    <button disabled={!valid} onClick={()=>setConfirming(true)}
+      style={{...BTN,width:"100%",opacity:valid?1:0.4,cursor:valid?"pointer":"not-allowed"}}>Review & Confirm →</button>
+  </div>;
+}
+
+// ─── MAIN APP ────────────────────────────────────────────
+function App(){
+  const[started,setStarted]=useState(false);
+  const[introDone,setIntroDone]=useState(false);
+  const[volume,setVolume]=useState(0.5);
+  const[muted,setMuted]=useState(false);
+  const introAudio=useRef(null),gameAudio=useRef(null);
+  const[pCount,setPCount]=useState(2);
+  const[pNames,setPNames]=useState(["Player 1","Player 2","Player 3","Player 4"]);
+  const[state,dispatch]=useReducer(reducer,null,()=>makeState(["Player 1","Player 2"]));
+  // Remote play: null = not decided yet, "local" = same-device hotseat (unchanged
+  // behavior), "online" = synced through Firestore. mySeat is which player index THIS
+  // browser controls — never synced, it's purely local knowledge of "who am I."
+  const[connectMode,setConnectMode]=useState(null);
+  const[roomCode,setRoomCode]=useState(null);
+  const[mySeat,setMySeat]=useState(0);
+  const stateRef=useRef(state);
+  stateRef.current=state;
+  const D=a=>{
+    dispatch(a);
+    if(roomCode){
+      const next=reducer(stateRef.current,a);
+      getDb().collection("rooms").doc(roomCode).set({state:next}).catch(()=>{});
+    }
+  };
+  useEffect(()=>{
+    if(!roomCode)return;
+    const unsub=getDb().collection("rooms").doc(roomCode).onSnapshot(snap=>{
+      const data=snap.data();
+      if(data&&data.state)dispatch({type:"__SET_REMOTE_STATE__",state:data.state});
+    });
+    return unsub;
+  },[roomCode]);
+  useEffect(()=>{
+    // Joiner: once the host has actually configured players, skip straight past the
+    // (host-only) setup screen into the live game.
+    if(connectMode==="online"&&mySeat!==0&&state.gameStarted)setStarted(true);
+  },[connectMode,mySeat,state.gameStarted]);
+
+  useEffect(()=>{
+    const a=new Audio(AUDIO_INTRO);a.loop=true;
+    const b=new Audio(AUDIO_GAMEPLAY);b.loop=true;
+    introAudio.current=a;gameAudio.current=b;
+    return()=>{a.pause();b.pause();};
+  },[]);
+  useEffect(()=>{
+    const v=muted?0:volume;
+    if(introAudio.current)introAudio.current.volume=v;
+    if(gameAudio.current)gameAudio.current.volume=v;
+  },[volume,muted]);
+  useEffect(()=>{
+    if(introDone){
+      introAudio.current&&introAudio.current.pause();
+      if(introAudio.current)introAudio.current.currentTime=0;
+      gameAudio.current&&gameAudio.current.play().catch(()=>{});
+    } else {
+      introAudio.current&&introAudio.current.play().catch(()=>{});
+    }
+  },[introDone]);
+  const unlockAudio=()=>{if(!introDone&&introAudio.current)introAudio.current.play().catch(()=>{});};
+  useEffect(()=>{
+    if(introDone)return;
+    const tryPlay=()=>introAudio.current&&introAudio.current.play().catch(()=>{});
+    document.addEventListener("pointerdown",tryPlay,{capture:true});
+    document.addEventListener("keydown",tryPlay,{capture:true});
+    return()=>{document.removeEventListener("pointerdown",tryPlay,{capture:true});document.removeEventListener("keydown",tryPlay,{capture:true});};
+  },[introDone]);
+
+  if(!introDone)return <LoadingScreen onBegin={()=>setIntroDone(true)} volume={volume} muted={muted} onVolume={setVolume} onMute={()=>setMuted(m=>!m)} onUnlockAudio={unlockAudio}/>;
+
+  if(!connectMode)return <ConnectScreen
+    onLocal={()=>setConnectMode("local")}
+    onCreate={()=>{const code=makeRoomCode();setRoomCode(code);setMySeat(0);setPCount(2);setConnectMode("online");}}
+    onJoin={code=>{setRoomCode(code);setMySeat(1);setConnectMode("online");}}
+    volume={volume} muted={muted} onVolume={setVolume} onMute={()=>setMuted(m=>!m)}/>;
+
+  if(connectMode==="online"&&mySeat!==0&&!state.gameStarted)
+    return <RoomWaiting roomCode={roomCode} volume={volume} muted={muted} onVolume={setVolume} onMute={()=>setMuted(m=>!m)}/>;
+
+  // Setup
+  if(!started)return <div style={{background:"#02040a",minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:16,position:"relative"}}>
+    <Starfield/>
+    <div style={{position:"absolute",top:16,right:20}}><VolumeControl volume={volume} muted={muted} onVolume={setVolume} onMute={()=>setMuted(m=>!m)}/></div>
+    <div style={{...P,width:"100%",maxWidth:400,border:"2px solid #134e4a",boxShadow:"0 0 24px rgba(19,78,74,0.4)"}}>
+      <div style={{textAlign:"center",marginBottom:22}}>
+        <div style={{fontFamily:PIXEL,fontSize:14,color:"#40d9c4",letterSpacing:1,lineHeight:1.8,textShadow:"2px 2px 0 #134e4a"}}>SPACE FARMER<br/>PRO</div>
+        <div style={{fontSize:11,color:"#607890",marginTop:8}}>Game Workflow Tester</div>
+      </div>
+      {connectMode==="online"&&<div style={{...P,marginBottom:14,textAlign:"center",border:"1px solid #facc15"}}>
+        <div style={{fontSize:10,color:"#607890"}}>Room code — share this with your friend:</div>
+        <div style={{fontFamily:PIXEL,fontSize:20,color:"#facc15",letterSpacing:6,marginTop:8}}>{roomCode}</div>
+      </div>}
+      {connectMode!=="online"&&<div style={{marginBottom:10}}><div style={{...LBL,marginBottom:6}}>Players</div>
+        <div style={{display:"flex",gap:6}}>{[2,3,4].map(n=><button key={n} onClick={()=>setPCount(n)} style={{...BTN,background:pCount===n?"#134e4a":"#0a0f1c",color:pCount===n?"#40d9c4":"#607890"}}>{n}P</button>)}</div>
+      </div>}
+      {Array.from({length:pCount},(_,i)=><input key={i} value={pNames[i]} onChange={e=>{const n=[...pNames];n[i]=e.target.value;setPNames(n);}} style={INP} placeholder={`Player ${i+1}`}/>)}
+      <button onClick={()=>{D({type:"RESET",names:pNames.slice(0,pCount)});setStarted(true);}} style={{...BTN,width:"100%",marginTop:12,fontSize:12,letterSpacing:1}}>▶ LAUNCH MISSION</button>
+    </div>
+  </div>;
+
+  // Game over
+  if(state.phase==="gameover"){
+    const OUTCOMES={
+      selfsuff:{icon:"🏙️✨",title:"COLONY ESTABLISHED",sub:`${state.winner} reached full self-sufficiency and wins immediately — every other colony is abandoned, regardless of DP.`,border:"#a16207",titleColor:"#fde047"},
+      earthsaved:{icon:"🌍💚",title:"EARTH SAVED",sub:"Six rounds complete, Earth still stands. Final scores, adjusted by Earth's Vitality:",border:"#134e4a",titleColor:"#40d9c4"},
+      collapse:{icon:"🥀🧑‍🌾",title:"EARTH HAS FALLEN",sub:"Vitality reached zero. The last transmission from Earth goes silent — no one wins.",border:"#7f1d1d",titleColor:"#f87171"},
+    };
+    const o=OUTCOMES[state.outcome]||{icon:state.winner?"🏆":"💀",title:state.winner?"MISSION COMPLETE":"MISSION FAILED",sub:state.gameoverMsg,border:"#134e4a",titleColor:"#40d9c4"};
+    return <div style={{background:"#02040a",minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:16,position:"relative"}}>
+      <Starfield/>
+      <div style={{position:"absolute",top:16,right:20}}><VolumeControl volume={volume} muted={muted} onVolume={setVolume} onMute={()=>setMuted(m=>!m)}/></div>
+      <div style={{...P,width:"100%",maxWidth:440,textAlign:"center",border:`2px solid ${o.border}`,boxShadow:`0 0 28px ${o.border}66`}}>
+        <div style={{fontSize:40,marginBottom:8}}>{o.icon}</div>
+        <div style={{fontFamily:PIXEL,fontSize:14,color:o.titleColor,marginBottom:14,lineHeight:1.8,letterSpacing:0.5}}>{o.title}</div>
+        <div style={{color:"#c0ccdd",marginBottom:16,lineHeight:1.5}}>{o.sub}</div>
+        {state.players.map(p=>{const dp=calcDP(p,state.vit);const isWinner=state.winner===p.name;return <div key={p.id} style={{...P,textAlign:"left",marginBottom:6,border:isWinner?"1px solid #fde047":undefined,opacity:state.outcome==="selfsuff"&&!isWinner?0.5:1}}>
+          <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:"#c0ccdd",fontWeight:"bold"}}>{isWinner?"🏆 ":""}{p.name}</span><span style={{color:"#40d9c4",fontWeight:"bold"}}>{dp} DP</span></div>
+          <div style={{fontSize:10,color:"#607890",marginTop:2}}>LS{p.colony.ls.filter(Boolean).length}/6 AG{p.colony.ag.filter(Boolean).length}/4 RE{p.colony.re.filter(Boolean).length}/3 · 🏆×{p.roundWins||0}</div>
+          <ColonyDisplay player={p}/>
+        </div>;})}
+        <div style={{fontSize:11,color:"#607890",marginBottom:12}}>Vitality: {state.vit}/10 · Mult ×{state.vit>=7?1:state.vit>=4?0.5:0.25}</div>
+        <button onClick={()=>setStarted(false)} style={BTN}>New Mission</button>
+      </div>
+    </div>;
+  }
+
+  const{phase,round,sunPos,vit,players,draft,draftIdx,draftOrder,engIdx,tradeIdx,event,efx,meteorHit,eventDrawn,meteorResolved,harvestResults,harvestLeaders,shipResult,contribs,contribIdx,contribsRevealed,selCard,log}=state;
+  const demand=DEMAND[round]||{g:0,gr:0,ex:0};
+  const adjDem={g:demand.g+(efx.demG||0),gr:demand.gr,ex:efx.demExDouble?demand.ex*2:demand.ex};
+  let activeIdx=null;
+  if(phase==="draft"&&draft.length>0)activeIdx=draftOrder[draftIdx%draftOrder.length];
+  else if(phase==="trade"&&tradeIdx<players.length)activeIdx=tradeIdx;
+  else if(phase==="engineering"&&engIdx<players.length)activeIdx=engIdx;
+  else if(phase==="contribute"&&!contribsRevealed&&contribIdx<players.length)activeIdx=contribIdx;
+  const remoteMode=connectMode==="online";
+  const isMyTurn=!remoteMode||activeIdx===null||activeIdx===mySeat;
+  const Waiting=({label})=><div style={{...P,textAlign:"center",padding:24}}>
+    <div style={{color:"#607890",fontSize:12}}>⏳ Waiting for <b style={{color:"#c0ccdd"}}>{label}</b>...</div>
+  </div>;
+
+  return <div style={{background:"#02040a",minHeight:"100vh",color:"#c0ccdd",fontFamily:"monospace",fontSize:13,position:"relative"}}>
+    <Starfield/>
+    {/* Header */}
+    <div style={{background:"rgba(10,15,28,0.92)",borderBottom:"2px solid #134e4a",boxShadow:"0 2px 0 #042f2e",padding:"10px 20px",display:"flex",flexWrap:"wrap",gap:12,alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:10}}>
+      <div style={{display:"flex",gap:12,alignItems:"center"}}>
+        <span style={{fontFamily:PIXEL,color:"#facc15",fontSize:12}}>R{round}/6</span>
+        {remoteMode&&<span style={{fontSize:10,color:"#4b5563"}}>Room {roomCode} · you're {players[mySeat]?.name||`P${mySeat+1}`}</span>}
+      </div>
+      <VBar v={vit}/>
+      <VolumeControl volume={volume} muted={muted} onVolume={setVolume} onMute={()=>setMuted(m=>!m)}/>
+    </div>
+
+    <div style={{display:"flex",gap:16,padding:"16px 24px",width:"min(1700px,96vw)",margin:"0 auto",position:"relative"}}>
+      {/* Main content */}
+      <div style={{flex:1,minWidth:0}}>
+
+        {/* EVENT */}
+        {phase==="event"&&<div style={P}>
+          <div style={H2}>Round {round} — Sun & Event</div>
+          <div style={{marginBottom:12}}>
+            {!eventDrawn?<div style={{...P,textAlign:"center",padding:22}}>
+              <div style={{color:"#607890",fontSize:12,marginBottom:12}}>This round's Event Card hasn't been drawn yet.</div>
+              <button onClick={()=>D({type:"DRAW_EVENT"})} style={BTN}>🎴 Draw Event Card</button>
+            </div>:event?<div style={{...P,border:`1px solid ${event.et==="meteor"?"#7f1d1d":event.et==="bonus"?"#14532d":event.et==="pressure"?"#7c2d12":"#1e3a5a"}`}}>
+              <div style={{fontSize:14,fontWeight:"bold",color:"#f1f5f9",marginBottom:4}}>{event.icon} {event.name}</div>
+              <div style={{fontSize:12,color:"#c0ccdd",lineHeight:1.5}}>{event.desc}</div>
+              {event.et==="meteor"&&!meteorResolved&&<button onClick={()=>D({type:"RESOLVE_METEOR"})} style={{...BTN,marginTop:8,background:"#7f1d1d",borderColor:"#f87171",color:"#fecaca"}}>☄️ Activate Strike</button>}
+              {event.et==="meteor"&&meteorResolved&&<MeteorReveal meteorHit={meteorHit} meteorResolved={meteorResolved} players={players}/>}
+              {efx.solarFlare&&<div style={{color:"#fde047",fontSize:11,marginTop:4}}>+1L all tiles · Mirrors offline</div>}
+              {efx.embargo&&<div style={{color:"#f87171",fontSize:11,marginTop:4}}>Trade Embargo active</div>}
+              {efx.seedsOnly&&<div style={{color:"#f97316",fontSize:11,marginTop:4}}>Seeds only in draft</div>}
+              {efx.bumper&&<div style={{color:"#4ade80",fontSize:11,marginTop:4}}>+1 bonus on all harvests</div>}
+            </div>:<div style={{...P,color:"#607890",fontSize:11}}>No event this round.</div>}
+          </div>
+          {eventDrawn&&(!event||event.et!=="meteor"||meteorResolved)&&<>
+            <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(players.length,4)},1fr)`,gap:8,marginBottom:12}}>
+              {players.map(p=><div key={p.id} style={{...P,padding:8}}>
+                <PGrid player={p} sunPos={sunPos} efx={efx} isActive={false} selCard={null} onPlace={()=>{}} onLift={()=>{}} onSetDir={()=>{}}/>
+                <div style={{fontSize:9,color:"#607890",marginTop:3}}>G{p.stockpile.g} Gr{p.stockpile.gr} Ex{p.stockpile.ex}</div>
+              </div>)}
+            </div>
+            <button onClick={()=>D({type:"DEAL_DRAFT"})} style={BTN}>→ Deal Draft</button>
+          </>}
+        </div>}
+
+        {/* DRAFT */}
+        {phase==="draft"&&(()=>{
+          const allDone=!draft.length;
+          const currP=players[draftOrder[draftIdx%draftOrder.length]];
+          return <div style={P}>
+            <div style={H2}>{allDone?"Draft Complete":"Draft — "+currP?.name}</div>
+            {!allDone&&(remoteMode&&!isMyTurn?<Waiting label={currP?.name}/>:<>
+              <div style={{fontSize:10,color:"#607890",marginBottom:8}}>Pick {draftIdx+1} · {draft.length} cards</div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>{draft.map(c=><Chip key={c.id} card={c} onClick={()=>D({type:"PICK",card:c})}/>)}</div>
+              <div style={{display:"flex",gap:8,marginBottom:10}}><button onClick={()=>D({type:"SKIP_PICK"})} style={BTN2}>Pass</button></div>
+              <div style={{fontSize:10,color:"#607890",marginBottom:4}}>{currP?.name} hand ({currP?.hand.length}):</div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:4}}>{currP?.hand.map(c=><Chip key={c.id} card={c} onClick={()=>{}}/>)}</div>
+            </>)}
+            {allDone&&<>
+              <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(players.length,4)},1fr)`,gap:6,marginBottom:10}}>
+                {players.map(p=><div key={p.id} style={{...P,padding:6}}>
+                  <div style={{fontSize:10,color:"#607890",marginBottom:3}}>{p.name}</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:3}}>{p.hand.map(c=><div key={c.id} style={{fontSize:9,color:c.t==="seed"?CC[c.crop]:"#93c5fd",background:"#0a0f1c",border:"1px solid #1e2d3d",borderRadius:2,padding:"1px 4px"}}>{c.name}</div>)}</div>
+                </div>)}
+              </div>
+              <button onClick={()=>D({type:efx.embargo?"SKIP_TRADE":"NEXT_TRADE"})} style={BTN}>→ {efx.embargo?"Engineering":"Trading"}</button>
+            </>}
+          </div>;
+        })()}
+
+        {/* TRADE */}
+        {phase==="trade"&&<div style={P}>
+          <div style={H2}>Trading — {players[tradeIdx]?.name}</div>
+          <div style={{fontSize:11,color:"#607890",marginBottom:10}}>{efx.embargo?"🚫 Embargo — no trades.":"1-for-1 or 2-for-1 only. Verbal promises are unenforceable."}</div>
+          <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(players.length,4)},1fr)`,gap:6,marginBottom:10}}>
+            {players.map((p,i)=><div key={p.id} style={{...P,border:`1px solid ${i===tradeIdx?"#0d9488":"#1e2d3d"}`,padding:8}}>
+              <div style={{fontSize:10,fontWeight:"bold",color:i===tradeIdx?"#40d9c4":"#607890",marginBottom:3}}>{p.name}</div>
+              <span style={{color:"#4ade80",fontSize:10}}>G{p.stockpile.g} </span>
+              <span style={{color:"#facc15",fontSize:10}}>Gr{p.stockpile.gr} </span>
+              <span style={{color:"#c084fc",fontSize:10}}>Ex{p.stockpile.ex}</span>
+              <div style={{fontSize:9,color:"#374151",marginTop:2}}>HW: {p.grid.filter(t=>t.c&&t.c.t==="hw").length}</div>
+            </div>)}
+          </div>
+          {remoteMode&&!isMyTurn?<Waiting label={players[tradeIdx]?.name}/>:<div style={{display:"flex",gap:8}}>
+            <button onClick={()=>D({type:"NEXT_TRADE"})} style={BTN}>{tradeIdx+1>=players.length?"Done →":"Next Player"}</button>
+            <button onClick={()=>D({type:"SKIP_TRADE"})} style={BTN2}>Skip all</button>
+          </div>}
+        </div>}
+
+        {/* ENGINEERING */}
+        {phase==="engineering"&&(()=>{
+          const p=players[engIdx];const tv=computeTiles(p,sunPos,efx||{});
+          return <div style={P}>
+            <div style={H2}>Engineering — {p?.name} ({engIdx+1}/{players.length})</div>
+            {remoteMode&&!isMyTurn?<Waiting label={p?.name}/>:<>
+            <div style={{fontSize:10,color:"#607890",marginBottom:8}}>Click card to select → click tile to place. Click placed piece to return to hand.</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div>
+                <div style={{...LBL,marginBottom:4}}>Hand ({p?.hand.length}) {selCard&&<span style={{color:"#40d9c4"}}> — {selCard.name}</span>}</div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:10,minHeight:30}}>{p?.hand.map(c=><Chip key={c.id} card={c} sel={selCard&&selCard.id===c.id} onClick={()=>D({type:"SEL_CARD",card:c})}/>)}</div>
+                <PGrid player={p} sunPos={sunPos} efx={efx} isActive={true} selCard={selCard}
+                  onPlace={tid=>D({type:"PLACE",tileId:tid})} onLift={tid=>D({type:"LIFT",tileId:tid})} onSetDir={(tid,dirs)=>D({type:"SET_DIR",tileId:tid,dirs})}/>
+                {p&&p.colony.ag.filter(Boolean).length>=2&&p.colony.agriWater&&
+                  <div style={{marginTop:6,fontSize:10,color:"#60a5fa"}}>★ +1W bonus tile:
+                    <select value={p.colony.agriWater} onChange={e=>D({type:"SET_AGRI_WATER",pid:p.id,tid:+e.target.value})}
+                      style={{marginLeft:6,background:"#0a0f1c",color:"#60a5fa",border:"1px solid #1e3a5a",borderRadius:2,padding:"1px 4px",fontFamily:"monospace"}}>
+                      {[1,2,3,4,5,6,7,8,9].map(t=><option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                }
+              </div>
+              <div>
+                <div style={{...LBL,marginBottom:4}}>Tile values</div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:2,marginBottom:8}}>
+                  {[1,2,3,4,5,6,7,8,9].map(t=><div key={t} style={{background:"#0a0f1c",border:"1px solid #1e2d3d",borderRadius:2,padding:"3px 0",textAlign:"center",fontSize:10}}>
+                    <div style={{color:"#374151",fontSize:8}}>T{t}</div>
+                    <span style={{color:"#facc15"}}>☀{tv[t]?tv[t].l:0}</span> <span style={{color:"#60a5fa"}}>💧{tv[t]?tv[t].w:0}</span>
+                  </div>)}
+                </div>
+                {efx.solarFlare&&<div style={{fontSize:10,color:"#fde047",marginBottom:6}}>⚡ +1L all · Mirrors offline</div>}
+                <ColonyDisplay player={p}/>
+                {p&&<div style={{fontSize:10,color:"#607890",marginTop:4}}>Stock: G{p.stockpile.g} Gr{p.stockpile.gr} Ex{p.stockpile.ex}</div>}
+              </div>
+            </div>
+            <button onClick={()=>D({type:"NEXT_ENG"})} style={{...BTN,marginTop:10}}>{engIdx+1>=players.length?"→ Harvest":"Next Player →"}</button>
+            </>}
+          </div>;
+        })()}
+
+        {/* HARVEST */}
+        {phase==="harvest"&&<div style={P}>
+          <div style={H2}>Harvest Phase</div>
+          {!harvestResults?<>
+            <div style={{fontSize:11,color:"#607890",marginBottom:8}}>Crops meeting L/W requirements will yield. Others go dormant (3 rounds = die).</div>
+            <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(players.length,4)},1fr)`,gap:8,marginBottom:10}}>
+              {players.map(p=>{const tv=computeTiles(p,sunPos,efx||{});const crops=p.grid.filter(t=>t.c&&t.c.t==="seed"&&!t.dmg);return <div key={p.id} style={{...P,padding:8}}>
+                <div style={{fontSize:10,fontWeight:"bold",color:"#607890",marginBottom:4}}>{p.name}</div>
+                {!crops.length&&<div style={{fontSize:9,color:"#374151"}}>No crops.</div>}
+                {crops.map(tile=>{const{l,w}=tv[tile.id];const ok=l>=tile.c.card.lr&&w>=tile.c.card.wr;return <div key={tile.id} style={{fontSize:9,color:ok?"#4ade80":"#f87171",marginBottom:2}}>T{tile.id} {tile.c.card.name}: {ok?`✓+${tile.c.card.yld+(efx.bumper?1:0)}`:`✗ L${l}W${w}→L${tile.c.card.lr}W${tile.c.card.wr}`}</div>;})}
+              </div>;})}
+            </div>
+            <button onClick={()=>D({type:"HARVEST"})} style={BTN}>→ Resolve Harvest</button>
+          </>:<>
+            {!!(harvestLeaders&&harvestLeaders.length)&&<div style={{fontSize:11,color:"#facc15",marginBottom:8}}>🏆 Harvest lead: {harvestLeaders.map(i=>players[i].name).join(", ")} — first pick next round, +2 DP banked</div>}
+            <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(players.length,4)},1fr)`,gap:8,marginBottom:10}}>
+              {players.map((p,pi)=>{const pLog=harvestResults.filter(h=>h.player===p.name);return <div key={p.id} style={{...P,padding:8,border:harvestLeaders&&harvestLeaders.includes(pi)?"1px solid #facc15":undefined}}>
+                <div style={{fontSize:10,fontWeight:"bold",color:"#607890",marginBottom:4}}>{p.name}</div>
+                {!pLog.length&&<div style={{fontSize:9,color:"#374151"}}>Nothing harvested.</div>}
+                {pLog.map((h,i)=><div key={i} style={{fontSize:9,color:h.ok?"#4ade80":h.died?"#9f1239":"#f97316",marginBottom:2}}>T{h.tile} {h.name}: {h.ok?`+${h.yld}`:h.died?"💀 died":`💤${h.dormant}/3`}</div>)}
+                <div style={{fontSize:9,color:"#607890",marginTop:3,borderTop:"1px solid #1e2d3d",paddingTop:3}}>G{p.stockpile.g} Gr{p.stockpile.gr} Ex{p.stockpile.ex}</div>
+              </div>;})}
+            </div>
+            <div style={{fontSize:10,color:"#607890",marginBottom:8}}>Harvest resolved. Proceed to contributions.</div>
+          </>}
+        </div>}
+
+        {/* CONTRIBUTE */}
+        {phase==="contribute"&&<div style={P}>
+          <div style={H2}>Phase V — Contribute to Earth</div>
+          <div style={{fontSize:10,color:"#607890",marginBottom:8}}>Need: <span style={{color:"#4ade80"}}>G{adjDem.g}</span> <span style={{color:"#facc15"}}>Gr{adjDem.gr}</span> <span style={{color:"#c084fc"}}>Ex{adjDem.ex}</span> — each player allocates secretly.</div>
+          {!contribsRevealed?<>
+            {remoteMode?(
+              contribs[mySeat]&&!contribs[mySeat].done?
+                <ContribForm player={players[mySeat]} onSubmit={(id,data)=>D({type:"SUBMIT",id,data})}/>
+              :contribs.every(c=>c.done)?
+                <div style={{textAlign:"center",padding:16}}>
+                  <div style={{color:"#4ade80",marginBottom:10,fontSize:13}}>All submitted.</div>
+                  <button onClick={()=>D({type:"REVEAL"})} style={{...BTN,fontSize:14,padding:"10px 24px",fontWeight:"bold"}}>🚀 Reveal All</button>
+                </div>
+              :<div style={{textAlign:"center",padding:16}}>
+                  <div style={{color:"#607890",fontSize:12,marginBottom:10}}>✓ Submitted — waiting for the other player...</div>
+                  <div style={{display:"flex",gap:12,justifyContent:"center"}}>
+                    {players.map((p,i)=><div key={p.id} style={{fontSize:11,color:contribs[i]&&contribs[i].done?"#4ade80":"#607890"}}>{p.name}: {contribs[i]&&contribs[i].done?"✓":"⏳"}</div>)}
+                  </div>
+                </div>
+            ):(
+              contribIdx<players.length?<ContribForm player={players[contribIdx]} onSubmit={(id,data)=>D({type:"SUBMIT",id,data})}/>:
+                <div style={{textAlign:"center",padding:16}}>
+                  <div style={{color:"#4ade80",marginBottom:10,fontSize:13}}>All submitted.</div>
+                  <button onClick={()=>D({type:"REVEAL"})} style={{...BTN,fontSize:14,padding:"10px 24px",fontWeight:"bold"}}>🚀 Reveal All</button>
+                </div>
+            )}
+          </>:<>
+            {shipResult&&<div style={{...P,border:`1px solid ${shipResult.allMet?"#14532d":"#7f1d1d"}`,marginBottom:10}}>
+              <div style={{fontSize:13,fontWeight:"bold",color:shipResult.allMet?"#4ade80":"#f87171",marginBottom:6}}>{shipResult.allMet?"✓ Earth's demand met!":"✗ Demand not fully met"}</div>
+              <div style={{display:"flex",gap:16,marginBottom:6}}>
+                {[["Greens","g","#4ade80","mG"],["Grain","gr","#facc15","mGr"],["Exotics","ex","#c084fc","mEx"]].map(([lbl,k,col,mk])=><div key={k} style={{textAlign:"center"}}>
+                  <div style={{fontSize:9,color:"#607890"}}>{lbl}</div>
+                  <div style={{fontSize:16,fontWeight:"bold",color:shipResult[mk]?col:"#f87171"}}>{shipResult.tot[k]}/{shipResult.dem[k]}</div>
+                </div>)}
+              </div>
+              <div style={{fontWeight:"bold",color:shipResult.vd>=0?"#4ade80":"#f87171",fontSize:13,textAlign:"center"}}>Vitality {shipResult.vd>=0?"+":""}{shipResult.vd} → {shipResult.newVit}</div>
+            </div>}
+            <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(players.length,4)},1fr)`,gap:6,marginBottom:10}}>
+              {contribs.map(c=>{const p=players.find(x=>x.id===c.id);return <div key={c.id} style={{...P,padding:8}}>
+                <div style={{fontSize:10,fontWeight:"bold",color:"#607890",marginBottom:3}}>{p&&p.name}</div>
+                <div style={{fontSize:9,color:"#4ade80"}}>→Earth: G{c.ship.g} Gr{c.ship.gr} Ex{c.ship.ex}</div>
+                <div style={{fontSize:9,color:"#a855f7"}}>→Colony: G{c.invest.g} Gr{c.invest.gr} Ex{c.invest.ex}</div>
+                {p&&<div style={{marginTop:4}}><ColonyDisplay player={p}/></div>}
+              </div>;})}
+            </div>
+            <button onClick={()=>D({type:"END_ROUND"})} style={BTN}>→ End Round {round}</button>
+          </>}
+        </div>}
+
+      </div>
+
+      {/* Sidebar */}
+      <div style={{width:300,flexShrink:0,display:"flex",flexDirection:"column",gap:14}}>
+        <div style={P}>
+          <div style={{...LBL,marginBottom:8}}>Sun Dial</div>
+          <SDial pos={sunPos}/>
+          <div style={{...LBL,margin:"14px 0 8px",paddingTop:12,borderTop:"1px solid #1e2d3d"}}>Demand Schedule</div>
+          {DEMAND.slice(1).map((d,i)=><div key={i} style={{display:"flex",gap:10,fontSize:13,padding:"4px 0",borderBottom:i+1===round?"1px solid #134e4a":"none",color:i+1===round?"#f1f5f9":"#607890",fontWeight:i+1===round?"bold":"normal"}}>
+            <span style={{width:24}}>R{i+1}</span>
+            <span style={{color:"#4ade80"}}>G{d.g}</span>
+            <span style={{color:"#facc15"}}>Gr{d.gr}</span>
+            <span style={{color:"#c084fc"}}>Ex{d.ex}</span>
+          </div>)}
+        </div>
+        <div style={P}>
+          <div style={{...LBL,marginBottom:8}}>Players</div>
+          {players.map((p,pi)=><div key={p.id} style={{marginBottom:10,paddingBottom:10,borderBottom:"1px solid #0d1526",display:"flex",gap:8,alignItems:"flex-start"}}>
+            {pi===activeIdx&&<PixelShip size={5} still/>}
+            <div style={{flex:1}}>
+              <div style={{fontSize:13,color:"#c0ccdd",fontWeight:"bold",marginBottom:3}}>{p.name}</div>
+              <span style={{color:"#4ade80",fontSize:12}}>G{p.stockpile.g} </span>
+              <span style={{color:"#facc15",fontSize:12}}>Gr{p.stockpile.gr} </span>
+              <span style={{color:"#c084fc",fontSize:12}}>Ex{p.stockpile.ex}</span>
+              <div style={{fontSize:11,color:"#4b5563",marginTop:2}}>LS{p.colony.ls.filter(Boolean).length} AG{p.colony.ag.filter(Boolean).length} RE{p.colony.re.filter(Boolean).length} · 🏆×{p.roundWins||0}</div>
+            </div>
+          </div>)}
+        </div>
+      </div>
+    </div>
+  </div>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
