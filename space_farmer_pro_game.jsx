@@ -255,17 +255,34 @@ function reducer(s, a) {
     const picked=shuf([...avHW,...seedsPicked]);
     const usedS=new Set(seedsPicked.map(c=>c.id));
     const usedH=new Set(avHW.map(c=>c.id));
-    // Nobody chooses which card they get — Earth hands them out at random, dealt
-    // round-robin through the draft order until the dealt pool is exhausted.
+    // Nobody chooses which card they get — Earth hands them out at random, no fairness
+    // guarantee. Each card's recipient is picked independently, so an uneven split (one
+    // player short on hardware, another short on crops) can genuinely happen — that's the
+    // point: it's what makes the Trade phase afterward actually matter.
     let players=s.players;
-    picked.forEach((card,i)=>{
-      const pi=s.draftOrder[i%s.draftOrder.length];
+    picked.forEach(card=>{
+      const pi=s.draftOrder[0|Math.random()*s.draftOrder.length];
       players=players.map((p,idx)=>idx!==pi?p:{...p,hand:[...p.hand,card]});
     });
     return{...s,players,draft:[],seedDeck:sd.filter(c=>!usedS.has(c.id)),hwDeck:hd.filter(c=>!usedH.has(c.id)),
       draftIdx:0,passStreak:0,phase:"draft",log:appendLog(s.log,`Draft: ${picked.length} cards dealt at random.`)};
   }
 
+  case "TRADE_SEND": {
+    if(s.efx.embargo) return s;
+    const fromIdx=s.tradeIdx, toIdx=a.toIdx;
+    if(fromIdx==null||toIdx==null||fromIdx===toIdx) return s;
+    const from=s.players[fromIdx], to=s.players[toIdx];
+    if(!from||!to) return s;
+    const card=from.hand.find(c=>c.id===a.cardId);
+    if(!card) return s;
+    const players=s.players.map((p,i)=>{
+      if(i===fromIdx) return{...p,hand:p.hand.filter(c=>c.id!==card.id)};
+      if(i===toIdx) return{...p,hand:[...p.hand,card]};
+      return p;
+    });
+    return{...s,players,log:appendLog(s.log,`${from.name}→${to.name}: ${card.name}`)};
+  }
   case "NEXT_TRADE": {
     const next=s.tradeIdx+1;
     if(next>=s.players.length) return{...s,phase:"engineering",engIdx:0,tradeIdx:0};
@@ -847,6 +864,34 @@ function Colony({player}){
   );
 }
 
+// ── Trade form — send a hand card (seed or hardware) to another player ────
+function TradeForm({player,others,onSend}){
+  const[toIdx,setToIdx]=useState(others[0]?others[0].idx:null);
+  return(
+    <div style={{...S.panel,marginTop:8}}>
+      <div style={{fontSize:11,color:"#607890",marginBottom:6}}>Send a card from your hand to:</div>
+      {others.length>1&&(
+        <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}}>
+          {others.map(o=>(
+            <button key={o.idx} onClick={()=>setToIdx(o.idx)}
+              style={{...S.btnSm,background:toIdx===o.idx?"#134e4a":"#0a0f1c",color:toIdx===o.idx?"#40d9c4":"#607890"}}>
+              {o.name}
+            </button>
+          ))}
+        </div>
+      )}
+      {player.hand.length ? (
+        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+          {player.hand.map(c=><Chip key={c.id} card={c} onClick={()=>toIdx!=null&&onSend(toIdx,c.id)}/>)}
+        </div>
+      ) : (
+        <div style={{color:"#374151",fontSize:11}}>Your hand is empty.</div>
+      )}
+      <div style={{fontSize:10,color:"#4b5563",marginTop:6}}>Click a card to send it — takes effect immediately.</div>
+    </div>
+  );
+}
+
 // ── Contribution form ─────────────────────────────────────
 function ContribForm({player,onSubmit}){
   const[shown,setShown]=useState(false);
@@ -1313,28 +1358,33 @@ export default function App(){
             <div style={S.panel}>
               <div style={S.h2}>Trading Window — {players[tradeIdx]?.name}</div>
               <div style={{fontSize:12,color:"#607890",marginBottom:12}}>
-                {efx.embargo?"🚫 Trade Embargo — no trades this round.":"Offer crops or hardware (1-for-1 or 2-for-1). Future promises unenforceable."}
+                {efx.embargo?"🚫 Trade Embargo — no trades this round.":"Swap the cards Earth randomly dealt you before you commit to Engineering."}
               </div>
               <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(players.length,4)},1fr)`,gap:8,marginBottom:16}}>
                 {players.map((p,i)=>(
                   <div key={p.id} style={{...S.panel,border:`1px solid ${i===tradeIdx?"#0d9488":"#1e2d3d"}`,padding:8}}>
                     <div style={{fontSize:11,fontWeight:"bold",color:i===tradeIdx?"#40d9c4":"#607890",marginBottom:4}}>{p.name}{i===tradeIdx?" (active)":""}</div>
-                    <div style={{fontSize:11}}>
-                      <span style={{color:"#4ade80"}}>G{p.stockpile.g}</span>{" "}
-                      <span style={{color:"#facc15"}}>Gr{p.stockpile.gr}</span>{" "}
-                      <span style={{color:"#c084fc"}}>Ex{p.stockpile.ex}</span>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                      {p.hand.map(c=><div key={c.id} style={{fontSize:10,color:c.t==="seed"?CC[c.crop]:"#93c5fd",background:"rgba(20,30,50,0.8)",border:"1px solid #1e2d3d",borderRadius:2,padding:"2px 5px"}}>{c.name}</div>)}
+                      {!p.hand.length&&<div style={{fontSize:10,color:"#374151"}}>—</div>}
                     </div>
-                    <div style={{fontSize:10,color:"#374151",marginTop:2}}>HW: {p.grid.filter(t=>t.c?.t==="hw").length}</div>
                   </div>
                 ))}
               </div>
               {remoteMode&&!isMyTurn?<Waiting label={players[tradeIdx]?.name}/>:(
-                <div style={{display:"flex",gap:8}}>
-                  <button onClick={()=>D({type:"NEXT_TRADE"})} style={S.btn}>
-                    {tradeIdx+1>=players.length?"Done →":"Next Player"}
-                  </button>
-                  <button onClick={()=>D({type:"SKIP_TRADE"})} style={{...S.btnSm,color:"#607890",background:"transparent",border:"none"}}>Skip all trades</button>
-                </div>
+                <>
+                  {!efx.embargo&&players[tradeIdx]&&(
+                    <TradeForm player={players[tradeIdx]}
+                      others={players.map((p,i)=>({idx:i,name:p.name})).filter(o=>o.idx!==tradeIdx)}
+                      onSend={(toIdx,cardId)=>D({type:"TRADE_SEND",toIdx,cardId})}/>
+                  )}
+                  <div style={{display:"flex",gap:8,marginTop:10}}>
+                    <button onClick={()=>D({type:"NEXT_TRADE"})} style={S.btn}>
+                      {tradeIdx+1>=players.length?"Done →":"Next Player"}
+                    </button>
+                    <button onClick={()=>D({type:"SKIP_TRADE"})} style={{...S.btnSm,color:"#607890",background:"transparent",border:"none"}}>Skip all trades</button>
+                  </div>
+                </>
               )}
             </div>
           )}
