@@ -552,14 +552,17 @@ function LoadingScreen({onBegin,volume,muted,onVolume,onMute,onUnlockAudio}){
         <div style={{fontFamily:"'Press Start 2P',monospace",fontSize:22,color:"#fde047",letterSpacing:2,textShadow:"3px 3px 0 #a16207",marginBottom:engaged?28:8}}>FARMER PRO</div>
         {!engaged&&<div style={{fontFamily:"'Press Start 2P',monospace",fontSize:11,color:"#40d9c4",letterSpacing:1,marginTop:20,animation:"sfp-blink 1.4s ease-in-out infinite"}}>▶ CLICK TO START</div>}
         {engaged&&<div style={{marginBottom:28,animation:"sfp-shipdrop 3000ms cubic-bezier(.2,.7,.3,1) both"}}><PixelShip/></div>}
-        {landed&&<>
+        {engaged&&<div style={{
+          opacity:landed?1:0,transform:landed?"translateY(0)":"translateY(8px)",
+          transition:"opacity 500ms ease-out, transform 500ms ease-out",pointerEvents:landed?"auto":"none",
+        }}>
           <button onClick={onBegin} style={{
             fontFamily:"'Press Start 2P',monospace",fontSize:13,color:"#99f6e4",background:"#134e4a",
             border:"2px solid #0d9488",borderRadius:2,padding:"14px 22px",cursor:"pointer",
             animation:"sfp-blink 1.6s ease-in-out infinite",letterSpacing:1,
           }}>▶ BEGIN MISSION</button>
-          <div style={{color:"#374151",fontSize:11,marginTop:16,animation:"sfp-fadein 500ms ease-out both"}}>Earth is dying. You are its last hope.</div>
-        </>}
+          <div style={{color:"#374151",fontSize:11,marginTop:16}}>Earth is dying. You are its last hope.</div>
+        </div>}
       </div>
     </div>
   );
