@@ -988,7 +988,7 @@ function App(){
             </div>)}
           </div>
           {remoteMode&&!isMyTurn?<Waiting label={players[tradeIdx]?.name}/>:<>
-            {!efx.embargo&&players[tradeIdx]&&<TradeForm player={players[tradeIdx]}
+            {!efx.embargo&&players[tradeIdx]&&<TradeForm key={tradeIdx} player={players[tradeIdx]}
               others={players.map((p,i)=>({idx:i,name:p.name})).filter(o=>o.idx!==tradeIdx)}
               onSend={(toIdx,cardId)=>D({type:"TRADE_SEND",toIdx,cardId})}/>}
             <div style={{display:"flex",gap:8,marginTop:10}}>

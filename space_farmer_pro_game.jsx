@@ -1364,7 +1364,7 @@ export default function App(){
               {remoteMode&&!isMyTurn?<Waiting label={players[tradeIdx]?.name}/>:(
                 <>
                   {!efx.embargo&&players[tradeIdx]&&(
-                    <TradeForm player={players[tradeIdx]}
+                    <TradeForm key={tradeIdx} player={players[tradeIdx]}
                       others={players.map((p,i)=>({idx:i,name:p.name})).filter(o=>o.idx!==tradeIdx)}
                       onSend={(toIdx,cardId)=>D({type:"TRADE_SEND",toIdx,cardId})}/>
                   )}
