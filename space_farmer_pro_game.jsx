@@ -123,6 +123,102 @@ function computeTiles(player, sunPos, efx={}) {
   return v;
 }
 
+// ── AI (computer-controlled player) ───────────────────────
+// Heuristic, not a search/ML solver — deterministic and fast, tuned to be a genuinely
+// tough opponent: hardware coverage maximization, greedy best-fit seed placement, and
+// Vitality-aware ship-vs-invest that gets aggressive about investing whenever it's safe.
+function aiPlaceMirror(card, player, grid, sunPos, efx) {
+  const max=card.hwt==="uMirror"?2:1;
+  const dirs4=["up","right","down","left"];
+  const emptyTiles=grid.filter(t=>!t.c&&t.dmg===0);
+  if(!emptyTiles.length) return null;
+  const tv=computeTiles({...player,grid}, sunPos, efx);
+  const need=id=>{
+    const tile=grid.find(t=>t.id===id);
+    const v=tv[id]||{l:0,w:0};
+    let n=3-v.l;
+    if(tile&&tile.c&&tile.c.t==="seed"&&v.l<tile.c.card.lr) n+=5;
+    return n;
+  };
+  let best=null, bestScore=-1;
+  for(const et of emptyTiles){
+    const reachable=dirs4.map(d=>({d,tgt:adjDir(et.id,d)})).filter(x=>x.tgt!=null&&grid.find(g=>g.id===x.tgt&&g.dmg===0));
+    if(!reachable.length) continue;
+    const scored=reachable.map(r=>({...r,n:need(r.tgt)})).sort((a,b)=>b.n-a.n);
+    const pick=scored.slice(0,max);
+    const score=pick.reduce((s,p)=>s+p.n,0);
+    if(score>bestScore){bestScore=score;best={tileId:et.id,dirs:pick.map(p=>p.d)};}
+  }
+  return best;
+}
+function aiPlanEngineering(player, sunPos, efx) {
+  const actions=[];
+  let grid=player.grid.map(t=>({...t}));
+  const hwCards=player.hand.filter(c=>c.t==="hw");
+  for(const card of hwCards){
+    const emptyTiles=grid.filter(t=>!t.c&&t.dmg===0);
+    if(!emptyTiles.length) break;
+    let spot=null;
+    if(card.hwt==="bIrrig"||card.hwt==="uIrrig"||card.hwt==="cReg"){
+      const covFn=card.hwt==="bIrrig"?ortho:all8;
+      let best=null, bestScore=-1;
+      for(const t of emptyTiles){
+        const score=covFn(t.id).length+1;
+        if(score>bestScore){bestScore=score;best=t;}
+      }
+      if(best) spot={tileId:best.id,dirs:[]};
+    } else {
+      spot=aiPlaceMirror(card, player, grid, sunPos, efx);
+    }
+    if(!spot) continue;
+    grid=grid.map(t=>t.id===spot.tileId?{...t,c:{t:"hw",card,dirs:spot.dirs}}:t);
+    actions.push({tileId:spot.tileId,card,dirs:spot.dirs});
+  }
+  const seedCards=player.hand.filter(c=>c.t==="seed").sort((a,b)=>b.yld-a.yld);
+  for(const card of seedCards){
+    const tv=computeTiles({...player,grid}, sunPos, efx);
+    const emptyTiles=grid.filter(t=>!t.c&&t.dmg===0);
+    let best=null, bestOverkill=Infinity;
+    for(const t of emptyTiles){
+      const v=tv[t.id]||{l:0,w:0};
+      if(v.l>=card.lr&&v.w>=card.wr){
+        const overkill=(v.l-card.lr)+(v.w-card.wr);
+        if(overkill<bestOverkill){bestOverkill=overkill;best=t;}
+      }
+    }
+    if(best){
+      grid=grid.map(t=>t.id===best.id?{...t,c:{t:"seed",card,dormant:0}}:t);
+      actions.push({tileId:best.id,card,dirs:null});
+    }
+  }
+  return actions;
+}
+function aiContribution(player, round, vit, efx, playerCount) {
+  const base=DEMAND[round]||{g:0,gr:0,ex:0};
+  const dem={g:base.g+(efx.demG||0),gr:base.gr,ex:efx.demExDouble?base.ex*2:base.ex};
+  // Healthy Earth: ship only a fair share, invest hard. Struggling: pad the share a bit.
+  // Critical: try to single-handedly cover the whole remaining demand — collapse means
+  // the AI loses too, no amount of DP saves it from that.
+  const shareMult=vit>=7?1/playerCount:vit>=4?1.3/playerCount:1;
+  const want={g:Math.ceil(dem.g*shareMult),gr:Math.ceil(dem.gr*shareMult),ex:Math.ceil(dem.ex*shareMult)};
+  const ship={
+    g:Math.min(want.g,player.stockpile.g),
+    gr:Math.min(want.gr,player.stockpile.gr),
+    ex:Math.min(want.ex,player.stockpile.ex),
+  };
+  const openLS=player.colony.ls.filter(x=>!x).length;
+  const openAG=player.colony.ag.filter(x=>!x).length;
+  const openRE=player.colony.re.filter(x=>!x).length;
+  // Empty colony slots carry a DP penalty at game end, and stockpile scores nothing —
+  // so invest every leftover crop it can fit rather than hoarding.
+  const invest={
+    g:Math.min(player.stockpile.g-ship.g, openLS),
+    gr:Math.min(player.stockpile.gr-ship.gr, openAG),
+    ex:Math.min(player.stockpile.ex-ship.ex, openRE),
+  };
+  return{ship,invest};
+}
+
 function calcDP(p, vit) {
   const ls=p.colony.ls.filter(Boolean).length, ag=p.colony.ag.filter(Boolean).length, re=p.colony.re.filter(Boolean).length;
   let dp=ls*1-(6-ls)*2+ag*2-(4-ag)*2+re*4-(3-re)*3;
@@ -135,10 +231,10 @@ function calcDP(p, vit) {
 // ── Initial state ─────────────────────────────────────────
 const blankEfx = ()=>({bumper:false,solarFlare:false,mirrorsDown:false,embargo:false,seedsOnly:false,extraCard:false,freeHW:false,demG:0,demExDouble:false});
 
-function makeState(names) {
+function makeState(names, aiFlags) {
   return {
     phase:"event", round:1, sunPos:0, vit:10,
-    players:names.map((name,id)=>({id,name,
+    players:names.map((name,id)=>({id,name,isAI:!!(aiFlags&&aiFlags[id]),
       grid:Array.from({length:9},(_,i)=>({id:i+1,c:null,dmg:0})),
       colony:{ls:[null,null,null,null,null,null],ag:[null,null,null,null],re:[null,null,null],agriWater:null},
       stockpile:{g:0,gr:0,ex:0},hand:[],roundWins:0,
@@ -172,7 +268,7 @@ function startRound(s) {
 
 function reducer(s, a) {
   switch(a.type) {
-  case "RESET": return {...startRound(makeState(a.names)), gameStarted: true};
+  case "RESET": return {...startRound(makeState(a.names, a.aiFlags)), gameStarted: true};
 
   case "DRAW_EVENT": {
     if(s.eventDrawn) return s;
@@ -827,16 +923,83 @@ function MeteorReveal({meteorHit, meteorResolved, players}){
 }
 
 // ── Player grid ───────────────────────────────────────────
-function Grid({player,sunPos,efx,isActive,selCard,onPlace,onLift,onSwap,onSetDir}){
+// Viewport-aware tooltip: measures its own rendered position after mount and flips
+// horizontal/vertical anchor so it never renders off-screen near a viewport edge.
+function EdgeTip({text}){
+  const ref=useRef(null);
+  const[h,setH]=useState("center");
+  const[v,setV]=useState("top");
+  useEffect(()=>{
+    const el=ref.current;
+    if(!el) return;
+    const r=el.getBoundingClientRect();
+    if(r.left<8) setH("left");
+    else if(r.right>window.innerWidth-8) setH("right");
+    if(r.top<8) setV("bottom");
+  },[]);
+  const hStyle=h==="left"?{left:0}:h==="right"?{right:0,left:"auto"}:{left:"50%",transform:"translateX(-50%)"};
+  const vStyle=v==="bottom"?{top:"calc(100% + 9px)"}:{bottom:"calc(100% + 9px)"};
+  const arrowSide=h==="center"?{left:"50%",transform:"translateX(-50%)"}:h==="left"?{left:16}:{right:16};
+  const arrowStyle=v==="bottom"
+    ?{position:"absolute",bottom:"100%",...arrowSide,width:0,height:0,borderLeft:"6px solid transparent",borderRight:"6px solid transparent",borderBottom:"6px solid #40d9c4"}
+    :{position:"absolute",top:"100%",...arrowSide,width:0,height:0,borderLeft:"6px solid transparent",borderRight:"6px solid transparent",borderTop:"6px solid #40d9c4"};
+  return(
+    <div ref={ref} style={{position:"absolute",...hStyle,...vStyle,background:"#0a0f1c",border:"1px solid #40d9c4",borderRadius:2,padding:"9px 11px",fontSize:12,color:"#c0ccdd",width:"min(220px,80vw)",lineHeight:1.5,zIndex:200,textAlign:"left",boxShadow:"0 6px 16px rgba(0,0,0,0.6)",pointerEvents:"none"}}>
+      {text}
+      <div style={arrowStyle}/>
+    </div>
+  );
+}
+
+// Full-screen overlay for aiming a mirror — replaces the old 4 tiny inline letter
+// buttons, which were too small to hit reliably on both mobile and desktop.
+function MirrorAimOverlay({tile,onSetDir,onClose}){
+  const max=tile.c.card.hwt==="uMirror"?2:1;
+  const dirs=tile.c.dirs||[];
+  const toggle=dir=>{
+    const sel=dirs.includes(dir);
+    const nd=sel?dirs.filter(x=>x!==dir):[...dirs,dir].slice(-max);
+    onSetDir(tile.id,nd);
+  };
+  const dbtn=(dir,label,pos)=>{
+    const sel=dirs.includes(dir);
+    return(
+      <button onClick={()=>toggle(dir)}
+        style={{position:"absolute",...pos,width:56,height:56,borderRadius:8,fontSize:24,fontWeight:"bold",background:sel?"#854d0e":"#1e3a5a",color:sel?"#fde047":"#93c5fd",border:`2px solid ${sel?"#fde047":"#2d4a6a"}`,cursor:"pointer"}}>
+        {label}
+      </button>
+    );
+  };
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(2,4,10,0.75)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} style={{...S.panel,width:230,textAlign:"center"}}>
+        <div style={{fontSize:12,color:"#c0ccdd",fontWeight:"bold",marginBottom:2}}>{tile.c.card.name} — Tile {tile.id}</div>
+        <div style={{fontSize:10,color:"#607890",marginBottom:10}}>{max===2?"Pick up to 2 directions":"Pick 1 direction"}</div>
+        <div style={{position:"relative",width:"100%",height:150,margin:"0 auto"}}>
+          {dbtn("up","↑",{top:0,left:"50%",transform:"translateX(-50%)"})}
+          {dbtn("left","←",{top:"50%",left:6,transform:"translateY(-50%)"})}
+          {dbtn("right","→",{top:"50%",right:6,transform:"translateY(-50%)"})}
+          {dbtn("down","↓",{bottom:0,left:"50%",transform:"translateX(-50%)"})}
+        </div>
+        <button onClick={onClose} style={{...S.btn,marginTop:10,width:"100%"}}>✓ Done</button>
+      </div>
+    </div>
+  );
+}
+
+function Grid({player,sunPos,efx,isActive,selCard,onPlace,onLift,onSwap,onSetDir,big}){
   const tv=useMemo(()=>computeTiles(player,sunPos,efx),[player,sunPos,efx]);
   const sun=SUN[sunPos%4];
   const[hoverId,setHoverId]=useState(null);
+  const[aimTile,setAimTile]=useState(null);
+  const minH=big?92:66, nameFs=big?12:10, subFs=big?10:9, valFs=big?11:10;
+  const aimingTile=aimTile&&player.grid.find(t=>t.id===aimTile);
   return(
     <div>
       <div style={{fontSize:11,color:isActive?"#40d9c4":"#607890",marginBottom:4}}>
         {isActive?"▶ ":""}{player.name}
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:3}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:big?4:3}}>
         {player.grid.map(tile=>{
           const{l,w}=tv[tile.id];
           const dmg=tile.dmg>0;
@@ -846,60 +1009,46 @@ function Grid({player,sunPos,efx,isActive,selCard,onPlace,onLift,onSwap,onSetDir
           const canPlace=isActive&&selCard&&!tile.c&&!dmg;
           const canLift=isActive&&tile.c&&!dmg&&(tile.c.t==="hw"||(tile.c.dormant||0)===0);
           const canSwap=selCard&&canLift;
+          const isMirror=tile.c&&tile.c.t==="hw"&&(tile.c.card.hwt==="bMirror"||tile.c.card.hwt==="uMirror");
           return(
             <div key={tile.id}
               onClick={()=>canPlace?onPlace(tile.id):canSwap?onSwap(tile.id):canLift?onLift(tile.id):null}
               onMouseEnter={()=>setHoverId(tile.id)} onMouseLeave={()=>setHoverId(null)}
-              style={{background:bg,border:`1px solid ${canPlace?"#0d9488":canSwap?"#a16207":bc}`,borderRadius:2,padding:"4px 5px",minHeight:66,cursor:canPlace||canLift?"pointer":"default",position:"relative",boxSizing:"border-box"}}>
-              <div style={{fontSize:9,color:"#374151"}}>{tile.id}</div>
-              {dmg&&<div style={{color:"#f87171",fontSize:10}}>☄️{tile.dmg}r</div>}
+              style={{background:bg,border:`1px solid ${canPlace?"#0d9488":canSwap?"#a16207":bc}`,borderRadius:2,padding:big?"5px 6px":"4px 5px",minHeight:minH,cursor:canPlace||canLift?"pointer":"default",position:"relative",boxSizing:"border-box"}}>
+              <div style={{fontSize:big?10:9,color:"#374151"}}>{tile.id}</div>
+              {dmg&&<div style={{color:"#f87171",fontSize:big?11:10}}>☄️{tile.dmg}r</div>}
               {!dmg&&tile.c&&(
                 <div style={{marginTop:2}}>
                   {tile.c.t==="seed"&&(
                     <>
-                      <div style={{fontSize:10,fontWeight:"bold",color:CC[tile.c.card.crop],wordBreak:"break-word"}}>{tile.c.card.name}</div>
-                      <div style={{fontSize:9,color:"#607890"}}>L{tile.c.card.lr}W{tile.c.card.wr}</div>
-                      {(tile.c.dormant||0)>0&&<div style={{fontSize:9,color:"#f97316"}}>💤{tile.c.dormant}/3</div>}
+                      <div style={{fontSize:nameFs,fontWeight:"bold",color:CC[tile.c.card.crop],wordBreak:"break-word"}}>{tile.c.card.name}</div>
+                      <div style={{fontSize:subFs,color:"#607890"}}>L{tile.c.card.lr}W{tile.c.card.wr}</div>
+                      {(tile.c.dormant||0)>0&&<div style={{fontSize:subFs,color:"#f97316"}}>💤{tile.c.dormant}/3</div>}
                     </>
                   )}
                   {tile.c.t==="hw"&&(
                     <>
-                      <div style={{fontSize:10,fontWeight:"bold",color:"#93c5fd",wordBreak:"break-word"}}>{tile.c.card.name}</div>
-                      {(tile.c.card.hwt==="bMirror"||tile.c.card.hwt==="uMirror")&&isActive&&(
-                        <div style={{display:"flex",gap:2,flexWrap:"wrap",marginTop:2}}>
-                          {["U","R","D","L"].map((label,i)=>{
-                            const dir=["up","right","down","left"][i];
-                            const sel=(tile.c.dirs||[]).includes(dir);
-                            return<button key={dir} onClick={e=>{e.stopPropagation();
-                              const cur=tile.c.dirs||[], max=tile.c.card.hwt==="uMirror"?2:1;
-                              const nd=sel?cur.filter(x=>x!==dir):[...cur,dir].slice(-max);
-                              onSetDir(tile.id,nd);
-                            }} style={{fontSize:9,padding:"4px 6px",background:sel?"#854d0e":"#1e3a5a",color:sel?"#fde047":"#93c5fd",border:"none",borderRadius:2,cursor:"pointer"}}>{label}</button>;
-                          })}
-                        </div>
+                      <div style={{fontSize:nameFs,fontWeight:"bold",color:"#93c5fd",wordBreak:"break-word"}}>{tile.c.card.name}</div>
+                      {isMirror&&isActive&&(
+                        <button onClick={e=>{e.stopPropagation();setAimTile(tile.id);}}
+                          style={{marginTop:2,fontSize:big?11:9,padding:big?"5px 8px":"4px 7px",background:"#1e3a5a",color:"#93c5fd",border:"1px solid #2d4a6a",borderRadius:3,cursor:"pointer"}}>
+                          🧭 {(tile.c.dirs||[]).length}/{tile.c.card.hwt==="uMirror"?2:1}
+                        </button>
                       )}
                     </>
                   )}
                 </div>
               )}
-              <div style={{position:"absolute",bottom:3,right:3,display:"flex",gap:3,fontSize:10}}>
+              <div style={{position:"absolute",bottom:3,right:3,display:"flex",gap:3,fontSize:valFs}}>
                 <span style={{color:"#facc15"}}>☀{l}</span>
                 <span style={{color:"#60a5fa"}}>💧{w}</span>
               </div>
-              {hoverId===tile.id&&tile.c&&(
-                <div style={{position:"absolute",bottom:"calc(100% + 9px)",left:"50%",transform:"translateX(-50%)",
-                  background:"#0a0f1c",border:"1px solid #40d9c4",borderRadius:2,padding:"9px 11px",
-                  fontSize:12,color:"#c0ccdd",width:220,lineHeight:1.5,zIndex:200,textAlign:"left",
-                  boxShadow:"0 6px 16px rgba(0,0,0,0.6)",pointerEvents:"none"}}>
-                  {tile.c.t==="hw"?hwFullDesc(tile.c.card):seedFullDesc(tile.c.card)}
-                  <div style={{position:"absolute",top:"100%",left:"50%",transform:"translateX(-50%)",width:0,height:0,
-                    borderLeft:"6px solid transparent",borderRight:"6px solid transparent",borderTop:"6px solid #40d9c4"}}/>
-                </div>
-              )}
+              {hoverId===tile.id&&tile.c&&<EdgeTip text={tile.c.t==="hw"?hwFullDesc(tile.c.card):seedFullDesc(tile.c.card)}/>}
             </div>
           );
         })}
       </div>
+      {aimingTile&&<MirrorAimOverlay tile={aimingTile} onSetDir={onSetDir} onClose={()=>setAimTile(null)}/>}
     </div>
   );
 }
@@ -1075,16 +1224,7 @@ function HoverTip({text,children}){
   return(
     <div style={{position:"relative"}} onMouseEnter={()=>setShow(true)} onMouseLeave={()=>setShow(false)}>
       {children}
-      {show&&(
-        <div style={{position:"absolute",bottom:"calc(100% + 9px)",left:"50%",transform:"translateX(-50%)",
-          background:"#0a0f1c",border:"1px solid #40d9c4",borderRadius:2,padding:"9px 11px",
-          fontSize:12,color:"#c0ccdd",width:230,lineHeight:1.5,zIndex:200,
-          boxShadow:"0 6px 16px rgba(0,0,0,0.6)",pointerEvents:"none"}}>
-          {text}
-          <div style={{position:"absolute",top:"100%",left:"50%",transform:"translateX(-50%)",width:0,height:0,
-            borderLeft:"6px solid transparent",borderRight:"6px solid transparent",borderTop:"6px solid #40d9c4"}}/>
-        </div>
-      )}
+      {show&&<EdgeTip text={text}/>}
     </div>
   );
 }
@@ -1136,11 +1276,20 @@ export default function App(){
     setTimeout(()=>setCopied(false),1500);
   };
   const[isNarrow,setIsNarrow]=useState(()=>typeof window!=="undefined"&&window.innerWidth<=820);
+  const[isPortrait,setIsPortrait]=useState(()=>typeof window!=="undefined"&&window.innerHeight>window.innerWidth);
+  const[rotateDismissed,setRotateDismissed]=useState(false);
   useEffect(()=>{
-    const onResize=()=>setIsNarrow(window.innerWidth<=820);
+    const onResize=()=>{
+      setIsNarrow(window.innerWidth<=820);
+      setIsPortrait(window.innerHeight>window.innerWidth);
+    };
     onResize();
     window.addEventListener("resize",onResize);
-    return()=>window.removeEventListener("resize",onResize);
+    window.addEventListener("orientationchange",onResize);
+    return()=>{
+      window.removeEventListener("resize",onResize);
+      window.removeEventListener("orientationchange",onResize);
+    };
   },[]);
   const stateRef=useRef(state);
   stateRef.current=state;
@@ -1164,6 +1313,38 @@ export default function App(){
     // (host-only) setup screen into the live game.
     if(connectMode==="online"&&mySeat!==0&&state.gameStarted) setStarted(true);
   },[connectMode,mySeat,state.gameStarted]);
+
+  // AI turn automation — hotseat only (online is strictly 2 real people). A short delay
+  // just makes it feel like the computer is actually taking its turn rather than the UI
+  // silently skipping someone.
+  useEffect(()=>{
+    if(connectMode==="online") return;
+    if(state.phase!=="engineering") return;
+    const p=state.players[state.engIdx];
+    if(!p||!p.isAI) return;
+    const t=setTimeout(()=>{
+      const moves=aiPlanEngineering(p, state.sunPos, state.efx);
+      for(const mv of moves){
+        D({type:"SEL_CARD",card:mv.card});
+        D({type:"PLACE",tileId:mv.tileId});
+        if(mv.dirs&&mv.dirs.length) D({type:"SET_DIR",tileId:mv.tileId,dirs:mv.dirs});
+      }
+      D({type:"NEXT_ENG"});
+    },700);
+    return()=>clearTimeout(t);
+  },[connectMode,state.phase,state.engIdx]);
+  useEffect(()=>{
+    if(connectMode==="online") return;
+    if(state.phase!=="contribute"||state.contribsRevealed) return;
+    const pi=state.contribIdx;
+    const p=state.players[pi];
+    if(!p||!p.isAI) return;
+    const t=setTimeout(()=>{
+      const{ship,invest}=aiContribution(p, state.round, state.vit, state.efx, state.players.length);
+      D({type:"SUBMIT",id:p.id,data:{ship,invest}});
+    },700);
+    return()=>clearTimeout(t);
+  },[connectMode,state.phase,state.contribIdx,state.contribsRevealed]);
 
   useEffect(()=>{
     const a=new Audio(AUDIO_INTRO); a.loop=true;
@@ -1244,6 +1425,7 @@ export default function App(){
   if(!started){
     const[count,setCount]=useState(2);
     const[names,setNames]=useState(["Player 1","Player 2","Player 3","Player 4"]);
+    const[ai,setAI]=useState([false,false,false,false]);
     return(
       <div style={{...S.page,display:"flex",alignItems:"center",justifyContent:"center",padding:20,position:"relative"}}>
         <Starfield/>
@@ -1270,11 +1452,24 @@ export default function App(){
             </div>
           )}
           {Array.from({length:count},(_,i)=>(
-            <input key={i} value={names[i]} onChange={e=>{const n=[...names];n[i]=e.target.value;setNames(n);}}
-              style={{display:"block",width:"100%",background:"#0a0f1c",color:"#c0ccdd",border:"1px solid #1e2d3d",borderRadius:2,padding:"8px 10px",fontFamily:"monospace",fontSize:16,marginBottom:6,boxSizing:"border-box"}}
-              placeholder={`Player ${i+1}`}/>
+            <div key={i} style={{display:"flex",gap:6,alignItems:"center"}}>
+              <input value={names[i]} onChange={e=>{const n=[...names];n[i]=e.target.value;setNames(n);}}
+                style={{display:"block",flex:1,background:"#0a0f1c",color:"#c0ccdd",border:"1px solid #1e2d3d",borderRadius:2,padding:"8px 10px",fontFamily:"monospace",fontSize:16,marginBottom:6,boxSizing:"border-box"}}
+                placeholder={`Player ${i+1}`}/>
+              {connectMode!=="online"&&(
+                <button onClick={()=>{const a=[...ai];a[i]=!a[i];setAI(a);}}
+                  style={{...S.btnSm,padding:"8px 10px",background:ai[i]?"#134e4a":"#0a0f1c",color:ai[i]?"#40d9c4":"#607890",marginBottom:6}}>
+                  🤖
+                </button>
+              )}
+            </div>
           ))}
-          <button onClick={()=>{D({type:"RESET",names:names.slice(0,count)});setStarted(true);}}
+          {connectMode!=="online"&&ai.slice(0,count).some(Boolean)&&(
+            <div style={{fontSize:9,color:"#4b5563",marginTop:-2,marginBottom:10}}>
+              🤖 = computer-controlled. It ships a fair share to Earth and invests the rest aggressively — built to be tough.
+            </div>
+          )}
+          <button onClick={()=>{D({type:"RESET",names:names.slice(0,count),aiFlags:ai.slice(0,count)});setStarted(true);}}
             style={{...S.btn,width:"100%",marginTop:12,fontSize:12,letterSpacing:1}}>
             ▶ LAUNCH MISSION
           </button>
@@ -1348,6 +1543,18 @@ export default function App(){
   return(
     <div style={S.page}>
       <Starfield/>
+      {isNarrow&&isPortrait&&!rotateDismissed&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(2,4,10,0.92)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:24,textAlign:"center"}}>
+          <div>
+            <div style={{fontSize:44,marginBottom:12,animation:"sfp-bob 1.6s ease-in-out infinite"}}>🔄</div>
+            <div style={{fontFamily:PIXEL,fontSize:13,color:"#40d9c4",marginBottom:12,lineHeight:1.8}}>ROTATE YOUR DEVICE</div>
+            <div style={{color:"#c0ccdd",fontSize:12,marginBottom:20,lineHeight:1.6,maxWidth:280}}>
+              The colony grids need a bit more room to breathe — landscape gives you a much easier time.
+            </div>
+            <button onClick={()=>setRotateDismissed(true)} style={S.btnSm}>Continue in portrait →</button>
+          </div>
+        </div>
+      )}
       {/* HEADER */}
       <div style={{background:"rgba(10,15,28,0.92)",borderBottom:"2px solid #134e4a",boxShadow:"0 2px 0 #042f2e",padding:"10px 20px",display:"flex",flexWrap:"wrap",gap:12,alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:10}}>
         <div style={{display:"flex",gap:12,alignItems:"center"}}>
@@ -1397,10 +1604,10 @@ export default function App(){
               </div>
               {eventDrawn&&(!event||event.et!=="meteor"||meteorResolved)&&(<>
                 {/* Grid overview */}
-                <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(players.length,4)},1fr)`,gap:10,marginBottom:16}}>
+                <div style={{display:"grid",gridTemplateColumns:isNarrow?"1fr":`repeat(${Math.min(players.length,4)},1fr)`,gap:10,marginBottom:16}}>
                   {players.map(p=>(
                     <div key={p.id} style={{...S.panel,padding:8}}>
-                      <Grid player={p} sunPos={sunPos} efx={efx} isActive={false} selCard={null} onPlace={()=>{}} onLift={()=>{}} onSwap={()=>{}} onSetDir={()=>{}}/>
+                      <Grid player={p} sunPos={sunPos} efx={efx} isActive={false} selCard={null} big={isNarrow} onPlace={()=>{}} onLift={()=>{}} onSwap={()=>{}} onSetDir={()=>{}}/>
                       <div style={{fontSize:10,color:"#607890",marginTop:4}}>G{p.stockpile.g} Gr{p.stockpile.gr} Ex{p.stockpile.ex}</div>
                     </div>
                   ))}
@@ -1461,18 +1668,22 @@ export default function App(){
             const tv=computeTiles(p,sunPos,efx);
             return(
               <div style={S.panel}>
-                <div style={S.h2}>Engineering — {p?.name} ({engIdx+1}/{players.length})</div>
-                {remoteMode&&!isMyTurn?<Waiting label={p?.name}/>:(
+                <div style={S.h2}>Engineering — {p?.name}{p?.isAI?" 🤖":""} ({engIdx+1}/{players.length})</div>
+                {p?.isAI?(
+                  <div style={{...S.panel,textAlign:"center",padding:24}}>
+                    <div style={{color:"#607890",fontSize:13}}>🤖 {p.name} is thinking...</div>
+                  </div>
+                ):remoteMode&&!isMyTurn?<Waiting label={p?.name}/>:(
                 <>
                 <div style={{fontSize:11,color:"#607890",marginBottom:10}}>Click a card to select → click a tile to place. Click a placed piece to return it to hand.</div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+                <div style={{display:"grid",gridTemplateColumns:isNarrow?"1fr":"1fr 1fr",gap:16}}>
                   <div>
                     <div style={{...S.label,marginBottom:6}}>Hand ({p?.hand.length} cards) {selCard&&<span style={{color:"#40d9c4"}}>— Selected: {selCard.name}</span>}</div>
                     <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14,minHeight:40}}>
                       {p?.hand.map(c=><Chip key={c.id} card={c} sel={selCard?.id===c.id} onClick={()=>D({type:"SEL_CARD",card:c})}/>)}
                       {!p?.hand.length&&<div style={{color:"#374151",fontSize:11}}>No cards in hand.</div>}
                     </div>
-                    <Grid player={p} sunPos={sunPos} efx={efx} isActive={true} selCard={selCard}
+                    <Grid player={p} sunPos={sunPos} efx={efx} isActive={true} selCard={selCard} big={isNarrow}
                       onPlace={tid=>D({type:"PLACE",tileId:tid})}
                       onLift={tid=>D({type:"LIFT",tileId:tid})}
                       onSwap={tid=>D({type:"SWAP",tileId:tid})}
@@ -1488,16 +1699,22 @@ export default function App(){
                     )}
                   </div>
                   <div>
-                    <div style={{...S.label,marginBottom:6}}>Tile values (after hardware)</div>
-                    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:3,marginBottom:12}}>
-                      {[1,2,3,4,5,6,7,8,9].map(t=>(
-                        <div key={t} style={{background:"#0a0f1c",border:"1px solid #1e2d3d",borderRadius:2,padding:"4px 0",textAlign:"center",fontSize:11}}>
-                          <div style={{color:"#374151",fontSize:9}}>T{t}</div>
-                          <span style={{color:"#facc15"}}>☀{tv[t]?.l||0}</span>{" "}
-                          <span style={{color:"#60a5fa"}}>💧{tv[t]?.w||0}</span>
+                    {/* Redundant with the ☀/💧 readout already shown on each tile — only
+                        worth the real estate when there's a second column to put it in. */}
+                    {!isNarrow&&(
+                      <>
+                        <div style={{...S.label,marginBottom:6}}>Tile values (after hardware)</div>
+                        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:3,marginBottom:12}}>
+                          {[1,2,3,4,5,6,7,8,9].map(t=>(
+                            <div key={t} style={{background:"#0a0f1c",border:"1px solid #1e2d3d",borderRadius:2,padding:"4px 0",textAlign:"center",fontSize:11}}>
+                              <div style={{color:"#374151",fontSize:9}}>T{t}</div>
+                              <span style={{color:"#facc15"}}>☀{tv[t]?.l||0}</span>{" "}
+                              <span style={{color:"#60a5fa"}}>💧{tv[t]?.w||0}</span>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
+                      </>
+                    )}
                     {efx.solarFlare&&<div style={{fontSize:11,color:"#fde047",marginBottom:8}}>⚡ Solar Flare: +1L all · Mirrors offline</div>}
                     <Colony player={p}/>
                     <div style={{fontSize:11,color:"#607890",marginTop:8}}>Stock: G{p?.stockpile.g} Gr{p?.stockpile.gr} Ex{p?.stockpile.ex}</div>
@@ -1619,10 +1836,16 @@ export default function App(){
                     )
                   ):(
                     contribIdx<players.length?(
-                      <ContribForm
-                        player={players[contribIdx]}
-                        onSubmit={(id,data)=>D({type:"SUBMIT",id,data})}
-                      />
+                      players[contribIdx].isAI?(
+                        <div style={{...S.panel,textAlign:"center",padding:24}}>
+                          <div style={{color:"#607890",fontSize:13}}>🤖 {players[contribIdx].name} is thinking...</div>
+                        </div>
+                      ):(
+                        <ContribForm
+                          player={players[contribIdx]}
+                          onSubmit={(id,data)=>D({type:"SUBMIT",id,data})}
+                        />
+                      )
                     ):(
                       <div style={{textAlign:"center",padding:20}}>
                         <div style={{color:"#4ade80",marginBottom:12,fontSize:14}}>All players submitted. Ready to reveal.</div>
@@ -1698,7 +1921,7 @@ export default function App(){
                 <div key={p.id} style={{marginBottom:10,paddingBottom:10,borderBottom:"1px solid #0d1526",display:"flex",gap:8,alignItems:"flex-start"}}>
                   {pi===activeIdx&&<PixelShip size={5} still/>}
                   <div style={{flex:1}}>
-                    <div style={{fontSize:13,color:"#c0ccdd",fontWeight:"bold",marginBottom:3}}>{p.name}</div>
+                    <div style={{fontSize:13,color:"#c0ccdd",fontWeight:"bold",marginBottom:3}}>{p.name}{p.isAI?" 🤖":""}</div>
                     <div style={{fontSize:12,color:"#607890"}}>
                       <span style={{color:"#4ade80"}}>G{p.stockpile.g}</span>{" "}
                       <span style={{color:"#facc15"}}>Gr{p.stockpile.gr}</span>{" "}
