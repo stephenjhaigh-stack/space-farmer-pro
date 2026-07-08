@@ -1272,6 +1272,9 @@ export default function App(){
   const[muted,setMuted]=useState(false);
   const introAudio=useRef(null), storyAudio=useRef(null), gameAudio=useRef(null);
   const[playerNames,setPlayerNames]=useState(["Player 1","Player 2"]);
+  // Hotseat/vs-computer only: whose hand is currently touchable in the Trade window.
+  // Remote play doesn't use this — each device already only ever touches its own seat.
+  const[tradeTurnIdx,setTradeTurnIdx]=useState(0);
   const[state,dispatch]=useReducer(reducer,null,()=>makeState(["Player 1","Player 2"]));
   // Remote play: null = not decided yet, "local" = same-device hotseat (unchanged
   // behavior), "online" = synced through Firestore. mySeat is which player index THIS
@@ -1387,6 +1390,21 @@ export default function App(){
     },700);
     return()=>clearTimeout(t);
   },[connectMode,state.phase,state.round]);
+  // Hotseat/vs-computer: only one player's hand is touchable at a time, so nobody can
+  // reach over (or the human can't reach into the computer's hand) and offer cards that
+  // aren't theirs. Resets fresh each time the Trade window opens; AI turns auto-skip since
+  // the effect above already made their offers.
+  useEffect(()=>{
+    if(state.phase==="trade") setTradeTurnIdx(0);
+  },[state.phase,state.round]);
+  useEffect(()=>{
+    if(connectMode==="online") return;
+    if(state.phase!=="trade") return;
+    const p=state.players[tradeTurnIdx];
+    if(!p||!p.isAI) return;
+    const t=setTimeout(()=>setTradeTurnIdx(i=>Math.min(i+1,state.players.length)),400);
+    return()=>clearTimeout(t);
+  },[connectMode,state.phase,tradeTurnIdx,state.players]);
 
   useEffect(()=>{
     const a=new Audio(AUDIO_INTRO); a.loop=true;
@@ -1679,7 +1697,7 @@ export default function App(){
                         <div style={{fontSize:12,color:"#c0ccdd"}}>
                           <span style={{color:"#40d9c4"}}>{players[o.fromIdx]?.name}</span> → <span style={{color:"#facc15"}}>{players[o.toIdx]?.name}</span>: <b>{o.card.name}</b>
                         </div>
-                        {(!remoteMode||o.fromIdx===mySeat)&&(
+                        {(remoteMode?o.fromIdx===mySeat:o.fromIdx===tradeTurnIdx)&&(
                           <button onClick={()=>D({type:"TRADE_RETRACT",cardId:o.id})} style={{...S.btnSm,fontSize:10,padding:"5px 9px"}}>↩ Retract</button>
                         )}
                       </div>
@@ -1691,15 +1709,27 @@ export default function App(){
               </div>
               {efx.embargo?(
                 <div style={{fontSize:12,color:"#f87171",marginBottom:12}}>🚫 Trade Embargo — no trades this round.</div>
-              ):(
+              ):(<>
+                {!remoteMode&&(
+                  <div style={{fontSize:12,marginBottom:8}}>
+                    {tradeTurnIdx<players.length?(
+                      <span style={{color:"#40d9c4"}}>{players[tradeTurnIdx]?.isAI?`🤖 ${players[tradeTurnIdx].name} is deciding...`:`👉 ${players[tradeTurnIdx]?.name}'s turn to offer — others, hands off!`}</span>
+                    ):(
+                      <span style={{color:"#4ade80"}}>✓ Everyone's had a turn.</span>
+                    )}
+                  </div>
+                )}
                 <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(players.length,4)},1fr)`,gap:8,marginBottom:12}}>
                   {players.map((p,i)=>(
-                    <PlayerTradeHand key={p.id} player={p} interactive={!remoteMode||i===mySeat}
+                    <PlayerTradeHand key={p.id} player={p} interactive={remoteMode?i===mySeat:i===tradeTurnIdx}
                       others={players.map((pp,ii)=>({idx:ii,name:pp.name})).filter(o=>o.idx!==i)}
                       onOffer={(toIdx,cardId)=>D({type:"TRADE_OFFER",fromIdx:i,toIdx,cardId})}/>
                   ))}
                 </div>
-              )}
+                {!remoteMode&&tradeTurnIdx<players.length&&!players[tradeTurnIdx]?.isAI&&(
+                  <button onClick={()=>setTradeTurnIdx(i=>Math.min(i+1,players.length))} style={{...S.btnSm,width:"100%",marginBottom:12}}>Done — Pass to Next Player →</button>
+                )}
+              </>)}
               <button onClick={()=>D({type:"TRADE_INITIATE"})} style={S.btn}>
                 {tradePile.length?`🤝 Initiate Trade (${tradePile.length})`:"→ Continue (no trades)"}
               </button>
