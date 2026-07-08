@@ -361,12 +361,30 @@ function reducer(s, a) {
       const gIds=new Set(guaranteedIrrig.map(c=>c.id));
       hd=hd.filter(h=>!gIds.has(h.id));
     }
+    // Round 3, Vitality critical: things are struggling completely, so Earth spares one
+    // extra piece of whatever tech NOBODY has anywhere yet (hand or grid) — targeted at
+    // the shared gap rather than a random extra, and allowed to bypass the v<=3 tech
+    // lockout below since this IS the emergency response to that exact situation.
+    let bonusTech=null;
+    if(s.round===3&&v<4){
+      const heldTypes=new Set();
+      s.players.forEach(p=>{
+        p.hand.forEach(c=>{if(c.t==="hw") heldTypes.add(c.hwt);});
+        p.grid.forEach(t=>{if(t.c&&t.c.t==="hw") heldTypes.add(t.c.card.hwt);});
+      });
+      const missingPool=hd.filter(h=>!heldTypes.has(h.hwt)&&s.round>=h.avail&&(h.hwt!=="cReg"||hasResearch));
+      if(missingPool.length){
+        bonusTech=shuf(missingPool)[0];
+        hd=hd.filter(h=>h.id!==bonusTech.id);
+      }
+    }
     // Hardware is scarce, not a flood: cap how much of it Earth can spare this round to
     // roughly one piece per player at full Vitality, shrinking with the damage it's taken
     // — a struggling Earth can't afford to keep shipping up new infrastructure. Tech
     // Breakthrough (freeHW) is the one event that loosens this.
     const hwCap=Math.max(1,Math.round((v/10)*n))+(s.efx.freeHW?2:0);
-    const avHW=s.efx.seedsOnly?[]:shuf(hd.filter(h=>s.round>=h.avail&&!(v<=3&&h.avail>1)&&(h.hwt!=="cReg"||hasResearch))).slice(0,hwCap);
+    const avHW=(s.efx.seedsOnly?[]:shuf(hd.filter(h=>s.round>=h.avail&&!(v<=3&&h.avail>1)&&(h.hwt!=="cReg"||hasResearch))).slice(0,hwCap))
+      .concat(bonusTech?[bonusTech]:[]);
     // Seeds: guarantee the per-round minimum of each crop type (see DRAFT_MIN), drawn from
     // that crop's own remaining pile first, then top up to the vitality-based count with
     // random draws from whatever's left.
@@ -417,9 +435,10 @@ function reducer(s, a) {
       players=players.map((p,idx)=>idx!==pi?p:{...p,hand:[...p.hand,card]});
     });
     const dealtTotal=picked.length+guaranteedIrrig.length;
+    const bonusNote=bonusTech?` (+1 emergency ${bonusTech.name})`:"";
     return{...s,players,draft:[],seedDeck:sd.filter(c=>!usedS.has(c.id)),hwDeck:hd.filter(c=>!usedH.has(c.id)),
       draftIdx:0,passStreak:0,phase:s.efx.embargo?"engineering":"trade",engIdx:0,tradePile:[],
-      log:appendLog(s.log,`Draft: ${dealtTotal} cards dealt at random.${guaranteedIrrig.length?` (+${guaranteedIrrig.length} starter Irrigators)`:""}`)};
+      log:appendLog(s.log,`Draft: ${dealtTotal} cards dealt at random.${guaranteedIrrig.length?` (+${guaranteedIrrig.length} starter Irrigators)`:""}${bonusNote}`)};
   }
 
   case "TRADE_OFFER": {
