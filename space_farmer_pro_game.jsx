@@ -198,6 +198,22 @@ function aiPlanEngineering(player, sunPos, efx) {
   }
   return actions;
 }
+// Reads the room before offering a trade: does the recipient's grid actually have space
+// this would slot into right now, and do they even hold this crop/hardware type already
+// (in hand or on the grid)? Higher score = more useful to THEM, not just "spare for us."
+function aiTradeUsefulness(card, recipient, sunPos, efx) {
+  const emptyTiles=recipient.grid.filter(t=>!t.c&&t.dmg===0);
+  if(!emptyTiles.length) return 0;
+  if(card.t==="seed"){
+    const tv=computeTiles(recipient, sunPos, efx);
+    const fitsNow=emptyTiles.some(t=>{const v=tv[t.id]||{l:0,w:0}; return v.l>=card.lr&&v.w>=card.wr;});
+    if(fitsNow) return 2;
+    const hasType=recipient.hand.some(c=>c.t==="seed"&&c.crop===card.crop);
+    return hasType?0:1;
+  }
+  const hasType=recipient.grid.some(t=>t.c&&t.c.t==="hw"&&t.c.card.hwt===card.hwt)||recipient.hand.some(c=>c.t==="hw"&&c.hwt===card.hwt);
+  return hasType?0:2;
+}
 const AI_PERSONALITIES=[
   {id:"guardian",label:"Guardian",icon:"🌍",color:"#4ade80",desc:"Ships generously and puts Earth's survival first, even at its own expense."},
   {id:"balanced",label:"Balanced",icon:"⚖️",color:"#40d9c4",desc:"Ships a fair share and invests the rest — tough but not reckless."},
@@ -1383,10 +1399,11 @@ export default function App(){
     },700);
     return()=>clearTimeout(t);
   },[connectMode,state.phase,state.contribIdx,state.contribsRevealed]);
-  // Trade: offer any cards the AI wouldn't place anyway this round (reusing the same
-  // "would this actually fit somewhere" check Engineering uses), once per round, to
-  // whichever other player isn't itself an AI. Doesn't finalize — the human decides
-  // when to hit Initiate Trade.
+  // Trade: each round, the AI reads the actual situation before offering anything —
+  // Earth's Vitality, its own spare cards, and the recipient's hand+grid (does this card
+  // even fit anywhere for them, do they already have this type) — rather than just
+  // dumping whatever it can't place itself. Doesn't finalize — the human decides when to
+  // hit Initiate Trade.
   const aiTradedRound=useRef(null);
   useEffect(()=>{
     if(connectMode==="online") return;
@@ -1394,6 +1411,7 @@ export default function App(){
     if(aiTradedRound.current===state.round) return;
     aiTradedRound.current=state.round;
     const t=setTimeout(()=>{
+      const urgency=state.vit>=7?"healthy":state.vit>=4?"struggling":"critical";
       state.players.forEach((p,idx)=>{
         if(!p.isAI) return;
         const moves=aiPlanEngineering(p, state.sunPos, state.efx);
@@ -1412,14 +1430,26 @@ export default function App(){
           }
           candidates.push(c);
         }
-        // A human wouldn't unload a chunk of their hand every round -- offer just 1 card
-        // normally, and only 2 if genuinely flush with a big backlog to spare from.
-        const maxOffer=p.hand.length>=6?2:1;
-        const spare=candidates.slice(0,maxOffer);
-        if(!spare.length) return;
+        if(!candidates.length) return;
         let toIdx=state.players.findIndex((pp,i)=>i!==idx&&!pp.isAI);
         if(toIdx<0) toIdx=state.players.findIndex((pp,i)=>i!==idx);
         if(toIdx<0) return;
+        const recipient=state.players[toIdx];
+        // Guardian/Balanced read the recipient's hand+grid and prefer offering whatever
+        // actually helps them; Opportunist doesn't bother checking, it just goes in
+        // whatever order the cards happened to end up spare.
+        const ranked=p.isAI==="opportunist"?candidates
+          :[...candidates].sort((a,b)=>aiTradeUsefulness(b,recipient,state.sunPos,state.efx)-aiTradeUsefulness(a,recipient,state.sunPos,state.efx));
+        // How many cards it's willing to part with: Guardian leans in harder the worse
+        // Earth's doing; Opportunist free-rides on trade the same way it free-rides on
+        // shipping, only bothering once Vitality is genuinely at risk; Balanced is steady.
+        const flush=p.hand.length>=6;
+        let maxOffer;
+        if(p.isAI==="guardian") maxOffer=urgency==="healthy"?(flush?2:1):(flush?3:2);
+        else if(p.isAI==="opportunist") maxOffer=urgency==="healthy"?0:(flush?2:1);
+        else maxOffer=flush?2:1;
+        const spare=ranked.slice(0,maxOffer);
+        if(!spare.length) return;
         spare.forEach(card=>D({type:"TRADE_OFFER",fromIdx:idx,toIdx,cardId:card.id}));
       });
     },700);
