@@ -218,6 +218,7 @@ const AI_PERSONALITIES=[
   {id:"guardian",label:"Guardian",icon:"🌍",color:"#4ade80",desc:"Ships generously and puts Earth's survival first, even at its own expense."},
   {id:"balanced",label:"Balanced",icon:"⚖️",color:"#40d9c4",desc:"Ships a fair share and invests the rest — tough but not reckless."},
   {id:"opportunist",label:"Opportunist",icon:"💰",color:"#f97316",desc:"Free-rides on everyone else until Vitality is genuinely at risk."},
+  {id:"wildcard",label:"Wildcard",icon:"🎲",color:"#ec4899",desc:"Mostly steady, but every so often throws the whole plan out and gambles."},
 ];
 const personalityOf = id=>AI_PERSONALITIES.find(x=>x.id===id);
 function aiContribution(player, round, vit, efx, playerCount, personality) {
@@ -225,12 +226,21 @@ function aiContribution(player, round, vit, efx, playerCount, personality) {
   const dem={g:base.g+(efx.demG||0),gr:base.gr,ex:efx.demExDouble?base.ex*2:base.ex};
   // Personality sets how much of the burden the AI carries vs keeps for itself. Guardian
   // over-ships even at its own expense; Opportunist free-rides until Vitality is genuinely
-  // at risk; Balanced (default, unchanged from before) ships a fair share throughout.
-  let shareMult;
-  if(personality==="guardian") shareMult=vit>=7?1.5/playerCount:vit>=4?2/playerCount:1.5;
-  else if(personality==="opportunist") shareMult=vit>=4?0:1/playerCount;
-  else shareMult=vit>=7?1/playerCount:vit>=4?1.3/playerCount:1;
-  const want={g:Math.ceil(dem.g*shareMult),gr:Math.ceil(dem.gr*shareMult),ex:Math.ceil(dem.ex*shareMult)};
+  // at risk; Balanced ships a fair share throughout; Wildcard is Balanced except for the
+  // occasional (~1-in-6 rounds) coin-flip into an all-in extreme — hoarding everything
+  // (ships nothing, risking Earth) or dumping everything (its whole stockpile, sacrificing
+  // its own colony growth that round).
+  let want;
+  if(personality==="wildcard"&&Math.random()<1/6){
+    const hoard=Math.random()<0.5;
+    want=hoard?{g:0,gr:0,ex:0}:{g:player.stockpile.g,gr:player.stockpile.gr,ex:player.stockpile.ex};
+  }else{
+    let shareMult;
+    if(personality==="guardian") shareMult=vit>=7?1.5/playerCount:vit>=4?2/playerCount:1.5;
+    else if(personality==="opportunist") shareMult=vit>=4?0:1/playerCount;
+    else shareMult=vit>=7?1/playerCount:vit>=4?1.3/playerCount:1;
+    want={g:Math.ceil(dem.g*shareMult),gr:Math.ceil(dem.gr*shareMult),ex:Math.ceil(dem.ex*shareMult)};
+  }
   const ship={
     g:Math.min(want.g,player.stockpile.g),
     gr:Math.min(want.gr,player.stockpile.gr),
@@ -1602,7 +1612,7 @@ export default function App(){
                 style={{display:"block",flex:1,background:"#0a0f1c",color:"#c0ccdd",border:"1px solid #1e2d3d",borderRadius:2,padding:"8px 10px",fontFamily:"monospace",fontSize:16,marginBottom:6,boxSizing:"border-box"}}
                 placeholder={`Player ${i+1}`}/>
               {connectMode!=="online"&&(
-                <button onClick={()=>{const a=[...ai];const order=[null,"guardian","balanced","opportunist"];a[i]=order[(order.indexOf(a[i])+1)%order.length];setAI(a);}}
+                <button onClick={()=>{const a=[...ai];const order=[null,"guardian","balanced","opportunist","wildcard"];a[i]=order[(order.indexOf(a[i])+1)%order.length];setAI(a);}}
                   title={personalityOf(ai[i])?personalityOf(ai[i]).desc:"Human-controlled — click to make this an AI player"}
                   style={{...S.btnSm,padding:"8px 10px",background:personalityOf(ai[i])?"#134e4a":"#0a0f1c",color:personalityOf(ai[i])?personalityOf(ai[i]).color:"#607890",marginBottom:6}}>
                   {personalityOf(ai[i])?`🤖${personalityOf(ai[i]).icon}`:"🤖"}
