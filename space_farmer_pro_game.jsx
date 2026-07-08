@@ -1582,7 +1582,7 @@ export default function App(){
   if(!started){
     const[count,setCount]=useState(2);
     const[names,setNames]=useState(["Player 1",vsComputer?"Computer":"Player 2","Player 3","Player 4"]);
-    const[ai,setAI]=useState(()=>vsComputer?[null,randomPersonality(),null,null]:[null,null,null,null]);
+    const[ai,setAI]=useState(vsComputer?[false,true,false,false]:[false,false,false,false]);
     return(
       <div style={{...S.page,display:"flex",alignItems:"center",justifyContent:"center",padding:20,position:"relative"}}>
         <Starfield/>
@@ -1614,20 +1614,20 @@ export default function App(){
                 style={{display:"block",flex:1,background:"#0a0f1c",color:"#c0ccdd",border:"1px solid #1e2d3d",borderRadius:2,padding:"8px 10px",fontFamily:"monospace",fontSize:16,marginBottom:6,boxSizing:"border-box"}}
                 placeholder={`Player ${i+1}`}/>
               {connectMode!=="online"&&(
-                <button onClick={()=>{const a=[...ai];a[i]=a[i]?null:randomPersonality();setAI(a);}}
-                  title={personalityOf(ai[i])?`${personalityOf(ai[i]).label} (randomly assigned) — ${personalityOf(ai[i]).desc}`:"Human-controlled — click to make this an AI player"}
-                  style={{...S.btnSm,padding:"8px 10px",background:personalityOf(ai[i])?"#134e4a":"#0a0f1c",color:personalityOf(ai[i])?personalityOf(ai[i]).color:"#607890",marginBottom:6}}>
-                  {personalityOf(ai[i])?`🤖${personalityOf(ai[i]).icon}`:"🤖"}
+                <button onClick={()=>{const a=[...ai];a[i]=!a[i];setAI(a);}}
+                  title={ai[i]?"Computer-controlled — personality is randomly assigned when the mission launches":"Human-controlled — click to make this an AI player"}
+                  style={{...S.btnSm,padding:"8px 10px",background:ai[i]?"#134e4a":"#0a0f1c",color:ai[i]?"#40d9c4":"#607890",marginBottom:6}}>
+                  🤖
                 </button>
               )}
             </div>
           ))}
           {connectMode!=="online"&&ai.slice(0,count).some(Boolean)&&(
             <div style={{fontSize:9,color:"#4b5563",marginTop:-2,marginBottom:10}}>
-              🤖 = computer-controlled, personality randomly assigned — {AI_PERSONALITIES.map(x=>`${x.icon} ${x.label}`).join(", ")}.
+              🤖 = computer-controlled. Its personality — {AI_PERSONALITIES.map(x=>`${x.icon} ${x.label}`).join(", ")} — is randomly assigned at launch, not chosen.
             </div>
           )}
-          <button onClick={()=>{D({type:"RESET",names:names.slice(0,count),aiFlags:ai.slice(0,count)});setStarted(true);}}
+          <button onClick={()=>{D({type:"RESET",names:names.slice(0,count),aiFlags:ai.slice(0,count).map(f=>f?randomPersonality():null)});setStarted(true);}}
             style={{...S.btn,width:"100%",marginTop:12,fontSize:12,letterSpacing:1}}>
             ▶ LAUNCH MISSION
           </button>

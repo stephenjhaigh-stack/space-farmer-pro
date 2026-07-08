@@ -1251,7 +1251,7 @@ function App(){
     onLocal={()=>setConnectMode("local")}
     onVsComputer={()=>{
       setPCount(2);
-      setPAI([null,randomPersonality(),null,null]);
+      setPAI([false,true,false,false]);
       setPNames(n=>{const nn=[...n];if(!nn[1]||nn[1]==="Player 2")nn[1]="Computer";return nn;});
       setConnectMode("local");
     }}
@@ -1280,10 +1280,10 @@ function App(){
       </div>}
       {Array.from({length:pCount},(_,i)=><div key={i} style={{display:"flex",gap:6,alignItems:"center"}}>
         <input value={pNames[i]} onChange={e=>{const n=[...pNames];n[i]=e.target.value;setPNames(n);}} style={{...INP,flex:1}} placeholder={`Player ${i+1}`}/>
-        {connectMode!=="online"&&<button onClick={()=>{const a=[...pAI];a[i]=a[i]?null:randomPersonality();setPAI(a);}} title={personalityOf(pAI[i])?`${personalityOf(pAI[i]).label} (randomly assigned) — ${personalityOf(pAI[i]).desc}`:"Human-controlled — click to make this an AI player"} style={{...BTN2,padding:"8px 10px",background:personalityOf(pAI[i])?"#134e4a":"#0a0f1c",color:personalityOf(pAI[i])?personalityOf(pAI[i]).color:"#607890",marginBottom:6}}>{personalityOf(pAI[i])?`🤖${personalityOf(pAI[i]).icon}`:"🤖"}</button>}
+        {connectMode!=="online"&&<button onClick={()=>{const a=[...pAI];a[i]=!a[i];setPAI(a);}} title={pAI[i]?"Computer-controlled — personality is randomly assigned when the mission launches":"Human-controlled — click to make this an AI player"} style={{...BTN2,padding:"8px 10px",background:pAI[i]?"#134e4a":"#0a0f1c",color:pAI[i]?"#40d9c4":"#607890",marginBottom:6}}>🤖</button>}
       </div>)}
-      {connectMode!=="online"&&pAI.slice(0,pCount).some(Boolean)&&<div style={{fontSize:9,color:"#4b5563",marginTop:-2,marginBottom:10}}>🤖 = computer-controlled, personality randomly assigned — {AI_PERSONALITIES.map(x=>`${x.icon} ${x.label}`).join(", ")}.</div>}
-      <button onClick={()=>{D({type:"RESET",names:pNames.slice(0,pCount),aiFlags:pAI.slice(0,pCount)});setStarted(true);}} style={{...BTN,width:"100%",marginTop:12,fontSize:12,letterSpacing:1}}>▶ LAUNCH MISSION</button>
+      {connectMode!=="online"&&pAI.slice(0,pCount).some(Boolean)&&<div style={{fontSize:9,color:"#4b5563",marginTop:-2,marginBottom:10}}>🤖 = computer-controlled. Its personality — {AI_PERSONALITIES.map(x=>`${x.icon} ${x.label}`).join(", ")} — is randomly assigned at launch, not chosen.</div>}
+      <button onClick={()=>{D({type:"RESET",names:pNames.slice(0,pCount),aiFlags:pAI.slice(0,pCount).map(f=>f?randomPersonality():null)});setStarted(true);}} style={{...BTN,width:"100%",marginTop:12,fontSize:12,letterSpacing:1}}>▶ LAUNCH MISSION</button>
     </div>
   </div>;
 
