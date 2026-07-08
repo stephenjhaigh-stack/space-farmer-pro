@@ -332,9 +332,19 @@ function reducer(s, a) {
     // blocks the minimums a round needs — it only thins out the extra/random filler.
     let count=n+Math.round((v/10)*(n+2));
     if(s.efx.extraCard) count+=1;
-    const sd=[...s.seedDeck], hd=[...s.hwDeck];
+    const sd=[...s.seedDeck]; let hd=[...s.hwDeck];
     // Climate Regulators additionally require a Research slot filled somewhere (rulebook 6.3).
     const hasResearch=s.players.some(p=>p.colony.re.filter(Boolean).length>0);
+    // Round 1: guarantee every player starts with their own Basic Irrigator so nobody opens
+    // with a zero-harvest round for lack of water — dealt directly, one per player, before
+    // the general random hardware pool below. Bypasses Supply Shortage on purpose; a bad
+    // draw shouldn't compound with "also nobody has water yet."
+    let guaranteedIrrig=[];
+    if(s.round===1){
+      guaranteedIrrig=shuf(hd.filter(h=>h.hwt==="bIrrig")).slice(0,n);
+      const gIds=new Set(guaranteedIrrig.map(c=>c.id));
+      hd=hd.filter(h=>!gIds.has(h.id));
+    }
     // Hardware is scarce, not a flood: cap how much of it Earth can spare this round to
     // roughly one piece per player at full Vitality, shrinking with the damage it's taken
     // — a struggling Earth can't afford to keep shipping up new infrastructure. Tech
@@ -386,9 +396,14 @@ function reducer(s, a) {
       const pi=recipients[i];
       players=players.map((p,idx)=>idx!==pi?p:{...p,hand:[...p.hand,card]});
     });
+    shuf(s.draftOrder).forEach((pi,i)=>{
+      const card=guaranteedIrrig[i]; if(!card) return;
+      players=players.map((p,idx)=>idx!==pi?p:{...p,hand:[...p.hand,card]});
+    });
+    const dealtTotal=picked.length+guaranteedIrrig.length;
     return{...s,players,draft:[],seedDeck:sd.filter(c=>!usedS.has(c.id)),hwDeck:hd.filter(c=>!usedH.has(c.id)),
       draftIdx:0,passStreak:0,phase:s.efx.embargo?"engineering":"trade",engIdx:0,tradePile:[],
-      log:appendLog(s.log,`Draft: ${picked.length} cards dealt at random.`)};
+      log:appendLog(s.log,`Draft: ${dealtTotal} cards dealt at random.${guaranteedIrrig.length?` (+${guaranteedIrrig.length} starter Irrigators)`:""}`)};
   }
 
   case "TRADE_OFFER": {
@@ -1390,14 +1405,17 @@ export default function App(){
         // round. A second (duplicate) seed of the same crop is fair game to trade away;
         // surplus hardware (already capped in aiPlanEngineering) trades freely too.
         const seenCrop=new Set();
-        const spare=[];
+        const candidates=[];
         for(const c of spareRaw){
           if(c.t==="seed"){
             if(!seenCrop.has(c.crop)){seenCrop.add(c.crop); continue;}
           }
-          spare.push(c);
-          if(spare.length>=2) break;
+          candidates.push(c);
         }
+        // A human wouldn't unload a chunk of their hand every round -- offer just 1 card
+        // normally, and only 2 if genuinely flush with a big backlog to spare from.
+        const maxOffer=p.hand.length>=6?2:1;
+        const spare=candidates.slice(0,maxOffer);
         if(!spare.length) return;
         let toIdx=state.players.findIndex((pp,i)=>i!==idx&&!pp.isAI);
         if(toIdx<0) toIdx=state.players.findIndex((pp,i)=>i!==idx);
