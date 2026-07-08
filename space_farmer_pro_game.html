@@ -416,7 +416,13 @@ function reducer(s,a){
       const grid=p.grid.map(tile=>{
         if(!tile.c||tile.c.t!=="seed"||tile.dmg>0)return tile;
         const sd=tile.c.card,{l,w}=tv[tile.id];
-        if(l>=sd.lr&&w>=sd.wr){const yld=sd.yld+(s.efx.bumper?1:0);gained[sd.crop]+=yld;hLog.push({player:p.name,tile:tile.id,name:sd.name,ok:true,yld,l,w,lr:sd.lr,wr:sd.wr});return{...tile,c:null};}
+        if(l>=sd.lr&&w>=sd.wr){
+          const overpowered=l>=sd.lr+1&&w>=sd.wr+1;
+          const yld=sd.yld+(s.efx.bumper?1:0)+(overpowered?1:0);
+          gained[sd.crop]+=yld;
+          hLog.push({player:p.name,tile:tile.id,name:sd.name,ok:true,yld,l,w,lr:sd.lr,wr:sd.wr,overpowered});
+          return{...tile,c:null};
+        }
         const dormant=(tile.c.dormant||0)+1;hLog.push({player:p.name,tile:tile.id,name:sd.name,ok:false,dormant,died:dormant>=3,l,w,lr:sd.lr,wr:sd.wr});
         return dormant>=3?{...tile,c:null}:{...tile,c:{...tile.c,dormant}};
       });
@@ -585,7 +591,7 @@ function LoadingScreen({onBegin,volume,muted,onVolume,onMute,onUnlockAudio}){
     </div>
   </div>;
 }
-function ConnectScreen({onLocal,onCreate,onJoin,volume,muted,onVolume,onMute}){
+function ConnectScreen({onLocal,onVsComputer,onCreate,onJoin,volume,muted,onVolume,onMute}){
   const[mode,setMode]=useState(null); // null | "join"
   const[codeInput,setCodeInput]=useState("");
   return <div style={{background:"#02040a",minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:16,position:"relative"}}>
@@ -597,6 +603,7 @@ function ConnectScreen({onLocal,onCreate,onJoin,volume,muted,onVolume,onMute}){
       </div>
       {mode===null&&<>
         <button onClick={onLocal} style={{...BTN,width:"100%",marginBottom:10}}>🖥️ Same Device (Hotseat)</button>
+        <button onClick={onVsComputer} style={{...BTN,width:"100%",marginBottom:10,background:"#3a1e5a"}}>🤖 Play vs Computer</button>
         <button onClick={onCreate} style={{...BTN,width:"100%",marginBottom:10,background:"#0d3d38"}}>🌍 Create Online Room</button>
         <button onClick={()=>setMode("join")} style={{...BTN,width:"100%",background:"#0d3d38"}}>🔑 Join Online Room</button>
         <div style={{fontSize:10,color:"#4b5563",marginTop:14,lineHeight:1.6}}>Online play is built for two people, each on their own device. Same-device hotseat still supports 2-4 players.</div>
@@ -1087,6 +1094,12 @@ function App(){
 
   if(!connectMode)return <ConnectScreen
     onLocal={()=>setConnectMode("local")}
+    onVsComputer={()=>{
+      setPCount(2);
+      setPAI([false,true,false,false]);
+      setPNames(n=>{const nn=[...n];if(!nn[1]||nn[1]==="Player 2")nn[1]="Computer";return nn;});
+      setConnectMode("local");
+    }}
     onCreate={()=>{const code=makeRoomCode();setRoomCode(code);setMySeat(0);setPCount(2);setConnectMode("online");}}
     onJoin={code=>{setRoomCode(code);setMySeat(1);setConnectMode("online");}}
     volume={volume} muted={muted} onVolume={setVolume} onMute={()=>setMuted(m=>!m)}/>;
@@ -1291,7 +1304,7 @@ function App(){
               {players.map(p=>{const tv=computeTiles(p,sunPos,efx||{});const crops=p.grid.filter(t=>t.c&&t.c.t==="seed"&&!t.dmg);return <div key={p.id} style={{...P,padding:8}}>
                 <div style={{fontSize:10,fontWeight:"bold",color:"#607890",marginBottom:4}}>{p.name}</div>
                 {!crops.length&&<div style={{fontSize:9,color:"#374151"}}>No crops.</div>}
-                {crops.map(tile=>{const{l,w}=tv[tile.id];const ok=l>=tile.c.card.lr&&w>=tile.c.card.wr;return <div key={tile.id} style={{fontSize:9,color:ok?"#4ade80":"#f87171",marginBottom:2}}>T{tile.id} {tile.c.card.name}: {ok?`✓+${tile.c.card.yld+(efx.bumper?1:0)}`:`✗ L${l}W${w}→L${tile.c.card.lr}W${tile.c.card.wr}`}</div>;})}
+                {crops.map(tile=>{const{l,w}=tv[tile.id];const ok=l>=tile.c.card.lr&&w>=tile.c.card.wr;const overpowered=ok&&l>=tile.c.card.lr+1&&w>=tile.c.card.wr+1;const yld=tile.c.card.yld+(efx.bumper?1:0)+(overpowered?1:0);return <div key={tile.id} style={{fontSize:9,color:ok?"#4ade80":"#f87171",marginBottom:2}}>T{tile.id} {tile.c.card.name}: {ok?`✓+${yld}${overpowered?" ⚡":""}`:`✗ L${l}W${w}→L${tile.c.card.lr}W${tile.c.card.wr}`}</div>;})}
               </div>;})}
             </div>
             <button onClick={()=>D({type:"HARVEST"})} style={BTN}>→ Resolve Harvest</button>
@@ -1301,7 +1314,7 @@ function App(){
               {players.map((p,pi)=>{const pLog=harvestResults.filter(h=>h.player===p.name);return <div key={p.id} style={{...P,padding:8,border:harvestLeaders&&harvestLeaders.includes(pi)?"1px solid #facc15":undefined}}>
                 <div style={{fontSize:10,fontWeight:"bold",color:"#607890",marginBottom:4}}>{p.name}</div>
                 {!pLog.length&&<div style={{fontSize:9,color:"#374151"}}>Nothing harvested.</div>}
-                {pLog.map((h,i)=><div key={i} style={{fontSize:9,color:h.ok?"#4ade80":h.died?"#9f1239":"#f97316",marginBottom:2}}>T{h.tile} {h.name}: {h.ok?`+${h.yld}`:h.died?"💀 died":`💤${h.dormant}/3`}</div>)}
+                {pLog.map((h,i)=><div key={i} style={{fontSize:9,color:h.ok?"#4ade80":h.died?"#9f1239":"#f97316",marginBottom:2}}>T{h.tile} {h.name}: {h.ok?`+${h.yld}${h.overpowered?" ⚡overpowered":""}`:h.died?"💀 died":`💤${h.dormant}/3`}</div>)}
                 <div style={{fontSize:9,color:"#607890",marginTop:3,borderTop:"1px solid #1e2d3d",paddingTop:3}}>G{p.stockpile.g} Gr{p.stockpile.gr} Ex{p.stockpile.ex}</div>
               </div>;})}
             </div>
@@ -1337,7 +1350,7 @@ function App(){
                   </div>
                 </div>
             ):(
-              contribIdx<players.length?(players[contribIdx].isAI?<div style={{...P,textAlign:"center",padding:24}}><div style={{color:"#607890",fontSize:12}}>🤖 {players[contribIdx].name} is thinking...</div></div>:<ContribForm player={players[contribIdx]} onSubmit={(id,data)=>D({type:"SUBMIT",id,data})}/>):
+              contribIdx<players.length?(players[contribIdx].isAI?<div style={{...P,textAlign:"center",padding:24}}><div style={{color:"#607890",fontSize:12}}>🤖 {players[contribIdx].name} is thinking...</div></div>:<ContribForm key={contribIdx} player={players[contribIdx]} onSubmit={(id,data)=>D({type:"SUBMIT",id,data})}/>):
                 <div style={{textAlign:"center",padding:16}}>
                   <div style={{color:"#4ade80",marginBottom:10,fontSize:13}}>All submitted.</div>
                   <button onClick={()=>D({type:"REVEAL"})} style={{...BTN,fontSize:14,padding:"10px 24px",fontWeight:"bold"}}>🚀 Reveal All</button>

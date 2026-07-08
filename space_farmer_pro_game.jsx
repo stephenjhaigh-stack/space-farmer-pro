@@ -477,9 +477,10 @@ function reducer(s, a) {
         if(!tile.c||tile.c.t!=="seed"||tile.dmg>0) return tile;
         const sd=tile.c.card, {l,w}=tv[tile.id];
         if(l>=sd.lr&&w>=sd.wr){
-          const yld=sd.yld+(s.efx.bumper?1:0);
+          const overpowered=l>=sd.lr+1&&w>=sd.wr+1;
+          const yld=sd.yld+(s.efx.bumper?1:0)+(overpowered?1:0);
           gained[sd.crop]+=yld;
-          hLog.push({player:p.name,tile:tile.id,name:sd.name,ok:true,yld,l,w,lr:sd.lr,wr:sd.wr});
+          hLog.push({player:p.name,tile:tile.id,name:sd.name,ok:true,yld,l,w,lr:sd.lr,wr:sd.wr,overpowered});
           return{...tile,c:null};
         }
         const dormant=(tile.c.dormant||0)+1;
@@ -743,7 +744,7 @@ function LoadingScreen({onBegin,volume,muted,onVolume,onMute,onUnlockAudio}){
 }
 
 // ── Remote play: connect / waiting screens ──────────────────
-function ConnectScreen({onLocal,onCreate,onJoin,volume,muted,onVolume,onMute}){
+function ConnectScreen({onLocal,onVsComputer,onCreate,onJoin,volume,muted,onVolume,onMute}){
   const[mode,setMode]=useState(null); // null | "join"
   const[codeInput,setCodeInput]=useState("");
   return(
@@ -759,6 +760,7 @@ function ConnectScreen({onLocal,onCreate,onJoin,volume,muted,onVolume,onMute}){
         {mode===null&&(
           <>
             <button onClick={onLocal} style={{...S.btn,width:"100%",marginBottom:10}}>🖥️ Same Device (Hotseat)</button>
+            <button onClick={onVsComputer} style={{...S.btn,width:"100%",marginBottom:10,background:"#3a1e5a"}}>🤖 Play vs Computer</button>
             <button onClick={onCreate} style={{...S.btn,width:"100%",marginBottom:10,background:"#0d3d38"}}>🌍 Create Online Room</button>
             <button onClick={()=>setMode("join")} style={{...S.btn,width:"100%",background:"#0d3d38"}}>🔑 Join Online Room</button>
             <div style={{fontSize:10,color:"#4b5563",marginTop:14,lineHeight:1.6}}>Online play is built for two people, each on their own device. Same-device hotseat still supports 2-4 players.</div>
@@ -1261,6 +1263,7 @@ export default function App(){
   // behavior), "online" = synced through Firestore. mySeat is which player index THIS
   // browser controls — never synced, it's purely local knowledge of "who am I."
   const[connectMode,setConnectMode]=useState(null);
+  const[vsComputer,setVsComputer]=useState(false);
   const[roomCode,setRoomCode]=useState(null);
   const[mySeat,setMySeat]=useState(0);
   const[copied,setCopied]=useState(false);
@@ -1414,6 +1417,7 @@ export default function App(){
 
   if(!connectMode) return <ConnectScreen
     onLocal={()=>setConnectMode("local")}
+    onVsComputer={()=>{setVsComputer(true);setConnectMode("local");}}
     onCreate={()=>{const code=makeRoomCode();setRoomCode(code);setMySeat(0);setConnectMode("online");}}
     onJoin={code=>{setRoomCode(code);setMySeat(1);setConnectMode("online");}}
     volume={volume} muted={muted} onVolume={setVolume} onMute={()=>setMuted(m=>!m)}/>;
@@ -1424,8 +1428,8 @@ export default function App(){
   // ── Setup screen ────────────────────────────────────────
   if(!started){
     const[count,setCount]=useState(2);
-    const[names,setNames]=useState(["Player 1","Player 2","Player 3","Player 4"]);
-    const[ai,setAI]=useState([false,false,false,false]);
+    const[names,setNames]=useState(["Player 1",vsComputer?"Computer":"Player 2","Player 3","Player 4"]);
+    const[ai,setAI]=useState(vsComputer?[false,true,false,false]:[false,false,false,false]);
     return(
       <div style={{...S.page,display:"flex",alignItems:"center",justifyContent:"center",padding:20,position:"relative"}}>
         <Starfield/>
@@ -1749,9 +1753,11 @@ export default function App(){
                           {crops.map(tile=>{
                             const{l,w}=tv[tile.id];
                             const ok=l>=tile.c.card.lr&&w>=tile.c.card.wr;
+                            const overpowered=ok&&l>=tile.c.card.lr+1&&w>=tile.c.card.wr+1;
+                            const yld=tile.c.card.yld+(efx.bumper?1:0)+(overpowered?1:0);
                             return(
                               <div key={tile.id} style={{fontSize:10,color:ok?"#4ade80":"#f87171",marginBottom:3}}>
-                                T{tile.id} {tile.c.card.name}: {ok?`✓ +${tile.c.card.yld+(efx.bumper?1:0)}`:`✗ (L${l}W${w}→L${tile.c.card.lr}W${tile.c.card.wr})`}
+                                T{tile.id} {tile.c.card.name}: {ok?`✓ +${yld}${overpowered?" ⚡":""}`:`✗ (L${l}W${w}→L${tile.c.card.lr}W${tile.c.card.wr})`}
                                 {!ok&&(tile.c.dormant||0)>0&&<span style={{color:"#f97316"}}> 💤{tile.c.dormant}</span>}
                               </div>
                             );
@@ -1778,7 +1784,7 @@ export default function App(){
                           {!pLog.length&&<div style={{fontSize:10,color:"#374151"}}>No crops to harvest.</div>}
                           {pLog.map((h,i)=>(
                             <div key={i} style={{fontSize:10,color:h.ok?"#4ade80":h.died?"#9f1239":"#f97316",marginBottom:3}}>
-                              T{h.tile} {h.name}: {h.ok?`+${h.yld} ✓`:h.died?"💀 died":`💤${h.dormant}/3`}
+                              T{h.tile} {h.name}: {h.ok?`+${h.yld} ✓${h.overpowered?" ⚡overpowered":""}`:h.died?"💀 died":`💤${h.dormant}/3`}
                             </div>
                           ))}
                           <div style={{fontSize:10,color:"#607890",marginTop:4,borderTop:"1px solid #1e2d3d",paddingTop:4}}>
@@ -1842,6 +1848,7 @@ export default function App(){
                         </div>
                       ):(
                         <ContribForm
+                          key={contribIdx}
                           player={players[contribIdx]}
                           onSubmit={(id,data)=>D({type:"SUBMIT",id,data})}
                         />
