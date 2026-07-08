@@ -333,11 +333,14 @@ function reducer(s, a) {
     let count=n+Math.round((v/10)*(n+2));
     if(s.efx.extraCard) count+=1;
     const sd=[...s.seedDeck], hd=[...s.hwDeck];
-    // Hardware is a small, non-renewable pool — deal ALL currently-unlocked hardware every
-    // round instead of randomly sampling it, so "no Irrigator showed up" can never happen.
     // Climate Regulators additionally require a Research slot filled somewhere (rulebook 6.3).
     const hasResearch=s.players.some(p=>p.colony.re.filter(Boolean).length>0);
-    const avHW=s.efx.seedsOnly?[]:hd.filter(h=>s.round>=h.avail&&!(v<=3&&h.avail>1)&&(h.hwt!=="cReg"||hasResearch));
+    // Hardware is scarce, not a flood: cap how much of it Earth can spare this round to
+    // roughly one piece per player at full Vitality, shrinking with the damage it's taken
+    // — a struggling Earth can't afford to keep shipping up new infrastructure. Tech
+    // Breakthrough (freeHW) is the one event that loosens this.
+    const hwCap=Math.max(1,Math.round((v/10)*n))+(s.efx.freeHW?2:0);
+    const avHW=s.efx.seedsOnly?[]:shuf(hd.filter(h=>s.round>=h.avail&&!(v<=3&&h.avail>1)&&(h.hwt!=="cReg"||hasResearch))).slice(0,hwCap);
     // Seeds: guarantee the per-round minimum of each crop type (see DRAFT_MIN), drawn from
     // that crop's own remaining pile first, then top up to the vitality-based count with
     // random draws from whatever's left.
@@ -1380,7 +1383,12 @@ export default function App(){
         if(!p.isAI) return;
         const moves=aiPlanEngineering(p, state.sunPos, state.efx);
         const placedIds=new Set(moves.map(m=>m.card.id));
-        const spare=p.hand.filter(c=>!placedIds.has(c.id)).slice(0,2);
+        const spareRaw=p.hand.filter(c=>!placedIds.has(c.id));
+        // Exotics are the AI's best cards -- hold on to at least one for a future round
+        // instead of giving it away just because it can't be placed *this* round. A
+        // second (duplicate) exotic sitting unused is fair game to trade away.
+        const firstExoticId=spareRaw.find(c=>c.t==="seed"&&c.crop==="ex")?.id;
+        const spare=spareRaw.filter(c=>c.id!==firstExoticId).slice(0,2);
         if(!spare.length) return;
         let toIdx=state.players.findIndex((pp,i)=>i!==idx&&!pp.isAI);
         if(toIdx<0) toIdx=state.players.findIndex((pp,i)=>i!==idx);
