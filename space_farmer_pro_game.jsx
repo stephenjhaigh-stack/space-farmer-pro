@@ -1384,11 +1384,20 @@ export default function App(){
         const moves=aiPlanEngineering(p, state.sunPos, state.efx);
         const placedIds=new Set(moves.map(m=>m.card.id));
         const spareRaw=p.hand.filter(c=>!placedIds.has(c.id));
-        // Exotics are the AI's best cards -- hold on to at least one for a future round
-        // instead of giving it away just because it can't be placed *this* round. A
-        // second (duplicate) exotic sitting unused is fair game to trade away.
-        const firstExoticId=spareRaw.find(c=>c.t==="seed"&&c.crop==="ex")?.id;
-        const spare=spareRaw.filter(c=>c.id!==firstExoticId).slice(0,2);
+        // Never give away every seed of a crop type -- keep at least one of each in
+        // reserve for a future round (once more hardware/light/water becomes available)
+        // instead of emptying out entirely just because none of it fits the grid *this*
+        // round. A second (duplicate) seed of the same crop is fair game to trade away;
+        // surplus hardware (already capped in aiPlanEngineering) trades freely too.
+        const seenCrop=new Set();
+        const spare=[];
+        for(const c of spareRaw){
+          if(c.t==="seed"){
+            if(!seenCrop.has(c.crop)){seenCrop.add(c.crop); continue;}
+          }
+          spare.push(c);
+          if(spare.length>=2) break;
+        }
         if(!spare.length) return;
         let toIdx=state.players.findIndex((pp,i)=>i!==idx&&!pp.isAI);
         if(toIdx<0) toIdx=state.players.findIndex((pp,i)=>i!==idx);
