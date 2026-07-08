@@ -170,8 +170,13 @@ function aiPlaceMirror(card,player,grid,sunPos,efx){
 function aiPlanEngineering(player,sunPos,efx){
   const actions=[];
   let grid=player.grid.map(t=>({...t}));
+  // Infrastructure only pays off if there's farmland left to use it on — cap hardware at
+  // half the grid so the AI doesn't pave over every tile and starve itself of room to
+  // actually plant seeds by round 3-4.
+  const hwCap=Math.floor(grid.length/2);
   const hwCards=player.hand.filter(c=>c.t==="hw");
   for(const card of hwCards){
+    if(grid.filter(t=>t.c&&t.c.t==="hw").length>=hwCap)break;
     const emptyTiles=grid.filter(t=>!t.c&&t.dmg===0);
     if(!emptyTiles.length)break;
     let spot=null;
@@ -209,13 +214,22 @@ function aiPlanEngineering(player,sunPos,efx){
   }
   return actions;
 }
-function aiContribution(player,round,vit,efx,playerCount){
+const AI_PERSONALITIES=[
+  {id:"guardian",label:"Guardian",icon:"🌍",color:"#4ade80",desc:"Ships generously and puts Earth's survival first, even at its own expense."},
+  {id:"balanced",label:"Balanced",icon:"⚖️",color:"#40d9c4",desc:"Ships a fair share and invests the rest — tough but not reckless."},
+  {id:"opportunist",label:"Opportunist",icon:"💰",color:"#f97316",desc:"Free-rides on everyone else until Vitality is genuinely at risk."},
+];
+const personalityOf=id=>AI_PERSONALITIES.find(x=>x.id===id);
+function aiContribution(player,round,vit,efx,playerCount,personality){
   const base=DEMAND[round]||{g:0,gr:0,ex:0};
   const dem={g:base.g+(efx.demG||0),gr:base.gr,ex:efx.demExDouble?base.ex*2:base.ex};
-  // Healthy Earth: ship only a fair share, invest hard. Struggling: pad the share a bit.
-  // Critical: try to single-handedly cover the whole remaining demand — collapse means
-  // the AI loses too, no amount of DP saves it from that.
-  const shareMult=vit>=7?1/playerCount:vit>=4?1.3/playerCount:1;
+  // Personality sets how much of the burden the AI carries vs keeps for itself. Guardian
+  // over-ships even at its own expense; Opportunist free-rides until Vitality is genuinely
+  // at risk; Balanced (default, unchanged from before) ships a fair share throughout.
+  let shareMult;
+  if(personality==="guardian")shareMult=vit>=7?1.5/playerCount:vit>=4?2/playerCount:1.5;
+  else if(personality==="opportunist")shareMult=vit>=4?0:1/playerCount;
+  else shareMult=vit>=7?1/playerCount:vit>=4?1.3/playerCount:1;
   const want={g:Math.ceil(dem.g*shareMult),gr:Math.ceil(dem.gr*shareMult),ex:Math.ceil(dem.ex*shareMult)};
   const ship={
     g:Math.min(want.g,player.stockpile.g),
@@ -246,7 +260,7 @@ function calcDP(p,vit){
 const blankEfx=()=>({bumper:false,solarFlare:false,mirrorsDown:false,embargo:false,seedsOnly:false,extraCard:false,freeHW:false,demG:0,demExDouble:false});
 function makeState(names,aiFlags){
   return{phase:"event",round:1,sunPos:0,vit:10,
-    players:names.map((name,id)=>({id,name,isAI:!!(aiFlags&&aiFlags[id]),
+    players:names.map((name,id)=>({id,name,isAI:(aiFlags&&aiFlags[id])||null,
       grid:Array.from({length:9},(_,i)=>({id:i+1,c:null,dmg:0})),
       colony:{ls:[null,null,null,null,null,null],ag:[null,null,null,null],re:[null,null,null],agriWater:null},
       stockpile:{g:0,gr:0,ex:0},hand:[],roundWins:0})),
@@ -955,7 +969,7 @@ function App(){
   const introAudio=useRef(null),storyAudio=useRef(null),gameAudio=useRef(null);
   const[pCount,setPCount]=useState(2);
   const[pNames,setPNames]=useState(["Player 1","Player 2","Player 3","Player 4"]);
-  const[pAI,setPAI]=useState([false,false,false,false]);
+  const[pAI,setPAI]=useState([null,null,null,null]);
   const[state,dispatch]=useReducer(reducer,null,()=>makeState(["Player 1","Player 2"]));
   // Remote play: null = not decided yet, "local" = same-device hotseat (unchanged
   // behavior), "online" = synced through Firestore. mySeat is which player index THIS
@@ -1034,7 +1048,7 @@ function App(){
     const p=state.players[pi];
     if(!p||!p.isAI)return;
     const t=setTimeout(()=>{
-      const{ship,invest}=aiContribution(p,state.round,state.vit,state.efx,state.players.length);
+      const{ship,invest}=aiContribution(p,state.round,state.vit,state.efx,state.players.length,p.isAI);
       D({type:"SUBMIT",id:p.id,data:{ship,invest}});
     },700);
     return()=>clearTimeout(t);
@@ -1121,7 +1135,7 @@ function App(){
     onLocal={()=>setConnectMode("local")}
     onVsComputer={()=>{
       setPCount(2);
-      setPAI([false,true,false,false]);
+      setPAI([null,"balanced",null,null]);
       setPNames(n=>{const nn=[...n];if(!nn[1]||nn[1]==="Player 2")nn[1]="Computer";return nn;});
       setConnectMode("local");
     }}
@@ -1150,9 +1164,9 @@ function App(){
       </div>}
       {Array.from({length:pCount},(_,i)=><div key={i} style={{display:"flex",gap:6,alignItems:"center"}}>
         <input value={pNames[i]} onChange={e=>{const n=[...pNames];n[i]=e.target.value;setPNames(n);}} style={{...INP,flex:1}} placeholder={`Player ${i+1}`}/>
-        {connectMode!=="online"&&<button onClick={()=>{const a=[...pAI];a[i]=!a[i];setPAI(a);}} style={{...BTN2,padding:"8px 10px",background:pAI[i]?"#134e4a":"#0a0f1c",color:pAI[i]?"#40d9c4":"#607890",marginBottom:6}}>🤖</button>}
+        {connectMode!=="online"&&<button onClick={()=>{const a=[...pAI];const order=[null,"guardian","balanced","opportunist"];a[i]=order[(order.indexOf(a[i])+1)%order.length];setPAI(a);}} title={personalityOf(pAI[i])?personalityOf(pAI[i]).desc:"Human-controlled — click to make this an AI player"} style={{...BTN2,padding:"8px 10px",background:personalityOf(pAI[i])?"#134e4a":"#0a0f1c",color:personalityOf(pAI[i])?personalityOf(pAI[i]).color:"#607890",marginBottom:6}}>{personalityOf(pAI[i])?`🤖${personalityOf(pAI[i]).icon}`:"🤖"}</button>}
       </div>)}
-      {connectMode!=="online"&&pAI.slice(0,pCount).some(Boolean)&&<div style={{fontSize:9,color:"#4b5563",marginTop:-2,marginBottom:10}}>🤖 = computer-controlled. It ships a fair share to Earth and invests the rest aggressively — built to be tough.</div>}
+      {connectMode!=="online"&&pAI.slice(0,pCount).some(Boolean)&&<div style={{fontSize:9,color:"#4b5563",marginTop:-2,marginBottom:10}}>🤖 click cycles personality — {AI_PERSONALITIES.map(x=>`${x.icon} ${x.label}`).join(" → ")} → Human.</div>}
       <button onClick={()=>{D({type:"RESET",names:pNames.slice(0,pCount),aiFlags:pAI.slice(0,pCount)});setStarted(true);}} style={{...BTN,width:"100%",marginTop:12,fontSize:12,letterSpacing:1}}>▶ LAUNCH MISSION</button>
     </div>
   </div>;
@@ -1280,7 +1294,7 @@ function App(){
         {phase==="engineering"&&(()=>{
           const p=players[engIdx];const tv=computeTiles(p,sunPos,efx||{});
           return <div style={P}>
-            <div style={H2}>Engineering — {p?.name}{p?.isAI?" 🤖":""} ({engIdx+1}/{players.length})</div>
+            <div style={H2}>Engineering — {p?.name}{p?.isAI?` 🤖${personalityOf(p.isAI)?.icon||""}`:""} ({engIdx+1}/{players.length})</div>
             {p?.isAI?<div style={{...P,textAlign:"center",padding:24}}><div style={{color:"#607890",fontSize:12}}>🤖 {p.name} is thinking...</div></div>:remoteMode&&!isMyTurn?<Waiting label={p?.name}/>:<>
             <div style={{fontSize:10,color:"#607890",marginBottom:8}}>Click card to select → click tile to place. Click placed piece to return to hand.</div>
             <div style={{display:"grid",gridTemplateColumns:isNarrow?"1fr":"1fr 1fr",gap:12}}>
@@ -1424,7 +1438,7 @@ function App(){
           {players.map((p,pi)=><div key={p.id} style={{marginBottom:10,paddingBottom:10,borderBottom:"1px solid #0d1526",display:"flex",gap:8,alignItems:"flex-start"}}>
             {pi===activeIdx&&<PixelShip size={5} still/>}
             <div style={{flex:1}}>
-              <div style={{fontSize:13,color:"#c0ccdd",fontWeight:"bold",marginBottom:3}}>{p.name}{p.isAI?" 🤖":""}</div>
+              <div style={{fontSize:13,color:"#c0ccdd",fontWeight:"bold",marginBottom:3}}>{p.name}{p.isAI?` 🤖${personalityOf(p.isAI)?.icon||""}`:""}</div>
               <span style={{color:"#4ade80",fontSize:12}}>G{p.stockpile.g} </span>
               <span style={{color:"#facc15",fontSize:12}}>Gr{p.stockpile.gr} </span>
               <span style={{color:"#c084fc",fontSize:12}}>Ex{p.stockpile.ex}</span>
