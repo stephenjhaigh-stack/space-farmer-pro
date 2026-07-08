@@ -237,6 +237,8 @@ const AI_PERSONALITIES=[
   {id:"wildcard",label:"Wildcard",icon:"🎲",color:"#ec4899",desc:"Mostly steady, but every so often throws the whole plan out and gambles."},
 ];
 const personalityOf=id=>AI_PERSONALITIES.find(x=>x.id===id);
+// You don't get to pick your opponent's temperament -- always randomized.
+const randomPersonality=()=>AI_PERSONALITIES[Math.floor(Math.random()*AI_PERSONALITIES.length)].id;
 function aiContribution(player,round,vit,efx,playerCount,personality){
   const base=DEMAND[round]||{g:0,gr:0,ex:0};
   const dem={g:base.g+(efx.demG||0),gr:base.gr,ex:efx.demExDouble?base.ex*2:base.ex};
@@ -1249,7 +1251,7 @@ function App(){
     onLocal={()=>setConnectMode("local")}
     onVsComputer={()=>{
       setPCount(2);
-      setPAI([null,"balanced",null,null]);
+      setPAI([null,randomPersonality(),null,null]);
       setPNames(n=>{const nn=[...n];if(!nn[1]||nn[1]==="Player 2")nn[1]="Computer";return nn;});
       setConnectMode("local");
     }}
@@ -1278,9 +1280,9 @@ function App(){
       </div>}
       {Array.from({length:pCount},(_,i)=><div key={i} style={{display:"flex",gap:6,alignItems:"center"}}>
         <input value={pNames[i]} onChange={e=>{const n=[...pNames];n[i]=e.target.value;setPNames(n);}} style={{...INP,flex:1}} placeholder={`Player ${i+1}`}/>
-        {connectMode!=="online"&&<button onClick={()=>{const a=[...pAI];const order=[null,"guardian","balanced","opportunist","wildcard"];a[i]=order[(order.indexOf(a[i])+1)%order.length];setPAI(a);}} title={personalityOf(pAI[i])?personalityOf(pAI[i]).desc:"Human-controlled — click to make this an AI player"} style={{...BTN2,padding:"8px 10px",background:personalityOf(pAI[i])?"#134e4a":"#0a0f1c",color:personalityOf(pAI[i])?personalityOf(pAI[i]).color:"#607890",marginBottom:6}}>{personalityOf(pAI[i])?`🤖${personalityOf(pAI[i]).icon}`:"🤖"}</button>}
+        {connectMode!=="online"&&<button onClick={()=>{const a=[...pAI];a[i]=a[i]?null:randomPersonality();setPAI(a);}} title={personalityOf(pAI[i])?`${personalityOf(pAI[i]).label} (randomly assigned) — ${personalityOf(pAI[i]).desc}`:"Human-controlled — click to make this an AI player"} style={{...BTN2,padding:"8px 10px",background:personalityOf(pAI[i])?"#134e4a":"#0a0f1c",color:personalityOf(pAI[i])?personalityOf(pAI[i]).color:"#607890",marginBottom:6}}>{personalityOf(pAI[i])?`🤖${personalityOf(pAI[i]).icon}`:"🤖"}</button>}
       </div>)}
-      {connectMode!=="online"&&pAI.slice(0,pCount).some(Boolean)&&<div style={{fontSize:9,color:"#4b5563",marginTop:-2,marginBottom:10}}>🤖 click cycles personality — {AI_PERSONALITIES.map(x=>`${x.icon} ${x.label}`).join(" → ")} → Human.</div>}
+      {connectMode!=="online"&&pAI.slice(0,pCount).some(Boolean)&&<div style={{fontSize:9,color:"#4b5563",marginTop:-2,marginBottom:10}}>🤖 = computer-controlled, personality randomly assigned — {AI_PERSONALITIES.map(x=>`${x.icon} ${x.label}`).join(", ")}.</div>}
       <button onClick={()=>{D({type:"RESET",names:pNames.slice(0,pCount),aiFlags:pAI.slice(0,pCount)});setStarted(true);}} style={{...BTN,width:"100%",marginTop:12,fontSize:12,letterSpacing:1}}>▶ LAUNCH MISSION</button>
     </div>
   </div>;
@@ -1324,6 +1326,10 @@ function App(){
   else if(phase==="contribute"&&!contribsRevealed&&contribIdx<players.length)activeIdx=contribIdx;
   const remoteMode=connectMode==="online";
   const isMyTurn=!remoteMode||activeIdx===null||activeIdx===mySeat;
+  // Playing solo against a computer: there's no other human whose agency a late retraction
+  // could step on, so let that one human take back their own offer any time during Trade —
+  // not just during their turn slot — in case the AI didn't offer anything back.
+  const soloHuman=!remoteMode&&players.filter(p=>!p.isAI).length===1;
   const Waiting=({label})=><div style={{...P,textAlign:"center",padding:24}}>
     <div style={{color:"#607890",fontSize:12}}>⏳ Waiting for <b style={{color:"#c0ccdd"}}>{label}</b>...</div>
   </div>;
@@ -1391,7 +1397,7 @@ function App(){
             {tradePile.length?<div style={{display:"flex",flexDirection:"column",gap:6}}>
               {tradePile.map(o=><div key={o.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,background:"rgba(0,0,0,0.3)",borderRadius:2,padding:"6px 10px"}}>
                 <div style={{fontSize:11,color:"#c0ccdd"}}><span style={{color:"#40d9c4"}}>{players[o.fromIdx]?.name}</span> → <span style={{color:"#facc15"}}>{players[o.toIdx]?.name}</span>: <b>{o.card.name}</b></div>
-                {(remoteMode?o.fromIdx===mySeat:o.fromIdx===tradeTurnIdx)&&<button onClick={()=>D({type:"TRADE_RETRACT",cardId:o.id})} style={{...BTN2,fontSize:9,padding:"4px 8px"}}>↩ Retract</button>}
+                {(remoteMode?o.fromIdx===mySeat:(soloHuman?!players[o.fromIdx]?.isAI:o.fromIdx===tradeTurnIdx))&&<button onClick={()=>D({type:"TRADE_RETRACT",cardId:o.id})} style={{...BTN2,fontSize:9,padding:"4px 8px"}}>↩ Retract</button>}
               </div>)}
             </div>:<div style={{fontSize:10,color:"#374151"}}>Nobody's offered anything yet.</div>}
           </div>
