@@ -1039,6 +1039,31 @@ function App(){
     },700);
     return()=>clearTimeout(t);
   },[connectMode,state.phase,state.contribIdx,state.contribsRevealed]);
+  // Trade: offer any cards the AI wouldn't place anyway this round (reusing the same
+  // "would this actually fit somewhere" check Engineering uses), once per round, to
+  // whichever other player isn't itself an AI. Doesn't finalize — the human decides
+  // when to hit Initiate Trade.
+  const aiTradedRound=useRef(null);
+  useEffect(()=>{
+    if(connectMode==="online")return;
+    if(state.phase!=="trade"||state.efx.embargo)return;
+    if(aiTradedRound.current===state.round)return;
+    aiTradedRound.current=state.round;
+    const t=setTimeout(()=>{
+      state.players.forEach((p,idx)=>{
+        if(!p.isAI)return;
+        const moves=aiPlanEngineering(p,state.sunPos,state.efx);
+        const placedIds=new Set(moves.map(m=>m.card.id));
+        const spare=p.hand.filter(c=>!placedIds.has(c.id)).slice(0,2);
+        if(!spare.length)return;
+        let toIdx=state.players.findIndex((pp,i)=>i!==idx&&!pp.isAI);
+        if(toIdx<0)toIdx=state.players.findIndex((pp,i)=>i!==idx);
+        if(toIdx<0)return;
+        spare.forEach(card=>D({type:"TRADE_OFFER",fromIdx:idx,toIdx,cardId:card.id}));
+      });
+    },700);
+    return()=>clearTimeout(t);
+  },[connectMode,state.phase,state.round]);
 
   useEffect(()=>{
     const a=new Audio(AUDIO_INTRO);a.loop=true;
