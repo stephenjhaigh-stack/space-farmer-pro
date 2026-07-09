@@ -42,7 +42,7 @@ const IMG_EARTH = "images/earth-cutout.png";
 const IMG_ASTEROID = "images/asteroid-farm-cutout.png";
 // Progressive damage backdrop for the main game screen, tied to Vitality's existing
 // healthy(>=7)/struggling(4-6)/critical(<4) tiers used everywhere else in the AI/rules.
-const vitEarthImg = v=>v>=7?"images/earth-vitality-healthy.jpg":v>=4?"images/earth-vitality-damaged.jpg":"images/earth-vitality-dying.jpg";
+const vitEarthImg = v=>v>=7?"images/earth-vitality-healthy.png":v>=4?"images/earth-vitality-damaged.png":"images/earth-vitality-dying.png";
 
 // Pixel-art pointing-hand cursor (inline SVG data URI, no external asset needed).
 const CURSOR_HAND = 'url("data:image/png;base64,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") 12 4, auto';
@@ -1539,7 +1539,11 @@ export default function App(){
   const showingStory=started&&!storyDone;
   useEffect(()=>{
     const all=[introAudio,storyAudio,gameAudio];
-    if(!introDone){
+    // Intro theme covers the loading screen AND the Connect/Setup screens that follow it —
+    // gameplay music should only ever start once a round is actually underway. (Previously
+    // this only checked introDone, so Connect/Setup silently fell through to gameplay music
+    // the moment the loading screen finished.)
+    if(!introDone||!started){
       all.forEach(r=>r.current?.pause());
       if(introAudio.current) introAudio.current.currentTime=0;
       introAudio.current?.play().catch(()=>{});
@@ -1552,7 +1556,7 @@ export default function App(){
       if(gameAudio.current) gameAudio.current.currentTime=0;
       gameAudio.current?.play().catch(()=>{});
     }
-  },[introDone,showingStory]);
+  },[introDone,started,showingStory]);
   const unlockAudio=()=>{ if(!introDone) introAudio.current?.play().catch(()=>{}); };
   // Browsers block audio until a user gesture happens *somewhere* on the page — there's no
   // way around that entirely, so instead of requiring the volume slider specifically, catch
@@ -1643,11 +1647,6 @@ export default function App(){
               )}
             </div>
           ))}
-          {connectMode!=="online"&&ai.slice(0,count).some(Boolean)&&(
-            <div style={{fontSize:9,color:"#4b5563",marginTop:-2,marginBottom:10}}>
-              🤖 = computer-controlled. Its personality — {AI_PERSONALITIES.map(x=>`${x.icon} ${x.label}`).join(", ")} — is randomly assigned at launch, not chosen.
-            </div>
-          )}
           <button onClick={()=>{D({type:"RESET",names:names.slice(0,count),aiFlags:ai.slice(0,count).map(f=>f?randomPersonality():null)});setStarted(true);}}
             style={{...S.btn,width:"100%",marginTop:12,fontSize:12,letterSpacing:1}}>
             ▶ LAUNCH MISSION
