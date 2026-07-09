@@ -36,9 +36,11 @@ function makeRoomCode() {
 // a 404 in the network tab on these paths is the tell.
 const AUDIO_INTRO = "audio/intro-theme.mp3"; // "Space Farmer" — loading screen only
 const AUDIO_SETUP = "audio/gameplay-theme.mp3"; // "Orbital Corn Rows" — Connect + Setup screens
-// The main game (story screen through actual rounds) is a shuffled playlist, not one
-// looping track — "Moonlit Save Point" plus the two "Focus Flow" tracks.
-const AUDIO_GAMEPLAY_TRACKS = ["audio/story-theme.mp3","audio/gameplay-theme-2.mp3","audio/gameplay-theme-3.mp3"];
+const AUDIO_STORY = "audio/story-theme.mp3"; // "Moonlit Save Point" — story/tutorial screen only, single track
+// Main game (actual rounds, after the story screen) is a shuffled playlist, not one
+// looping track — "Orbital Corn Rows" pulls double duty here alongside both "Focus Flow"
+// tracks.
+const AUDIO_GAMEPLAY_TRACKS = ["audio/gameplay-theme.mp3","audio/gameplay-theme-2.mp3","audio/gameplay-theme-3.mp3"];
 const IMG_EARTH = "images/earth-cutout.png";
 const IMG_ASTEROID = "images/asteroid-farm-cutout.png";
 // Progressive damage backdrop for the main game screen, tied to Vitality's existing
@@ -1345,7 +1347,7 @@ export default function App(){
   const[introDone,setIntroDone]=useState(false);
   const[volume,setVolume]=useState(0.5);
   const[muted,setMuted]=useState(false);
-  const introAudio=useRef(null), setupAudio=useRef(null), gameAudio=useRef(null);
+  const introAudio=useRef(null), setupAudio=useRef(null), storyAudio=useRef(null), gameAudio=useRef(null);
   const[playerNames,setPlayerNames]=useState(["Player 1","Player 2"]);
   // Hotseat/vs-computer only: whose hand is currently touchable in the Trade window.
   // Remote play doesn't use this — each device already only ever touches its own seat.
@@ -1516,6 +1518,7 @@ export default function App(){
   useEffect(()=>{
     const a=new Audio(AUDIO_INTRO); a.loop=true;
     const s=new Audio(AUDIO_SETUP); s.loop=true;
+    const st=new Audio(AUDIO_STORY); st.loop=true;
     // Main-game music shuffles through the playlist instead of looping one track — pick a
     // random track (never immediately repeating the one that just played) each time the
     // current one ends.
@@ -1530,21 +1533,21 @@ export default function App(){
     nextTrack();
     b.addEventListener("ended",()=>{nextTrack(); b.play().catch(()=>{});});
     nextGameTrack.current=nextTrack;
-    introAudio.current=a; setupAudio.current=s; gameAudio.current=b;
-    return()=>{a.pause();s.pause();b.pause();};
+    introAudio.current=a; setupAudio.current=s; storyAudio.current=st; gameAudio.current=b;
+    return()=>{a.pause();s.pause();st.pause();b.pause();};
   },[]);
   useEffect(()=>{
     const v=muted?0:volume;
-    [introAudio,setupAudio,gameAudio].forEach(r=>{if(r.current) r.current.volume=v;});
+    [introAudio,setupAudio,storyAudio,gameAudio].forEach(r=>{if(r.current) r.current.volume=v;});
   },[volume,muted]);
-  // Three music zones: loading screen ("Space Farmer") -> Connect/Setup ("Orbital Corn
-  // Rows") -> the main game, story screen through actual rounds, as one continuous
-  // shuffled zone (Moonlit Save Point + the two Focus Flow tracks). Re-entering this zone
-  // at all (Setup->story, or story->actual rounds) forces a fresh random pick instead of
+  // Four music zones: loading screen ("Space Farmer") -> Connect/Setup ("Orbital Corn
+  // Rows") -> story/tutorial screen ("Moonlit Save Point", a single dedicated track) ->
+  // main game once actual rounds start, shuffled ("Orbital Corn Rows" again + both "Focus
+  // Flow" tracks). Re-entering the main-game zone forces a fresh random pick instead of
   // just resuming whatever happened to still be playing.
   const showingStory=started&&!storyDone;
   useEffect(()=>{
-    const all=[introAudio,setupAudio,gameAudio];
+    const all=[introAudio,setupAudio,storyAudio,gameAudio];
     if(!introDone){
       all.forEach(r=>r.current?.pause());
       if(introAudio.current) introAudio.current.currentTime=0;
@@ -1553,6 +1556,10 @@ export default function App(){
       all.forEach(r=>{if(r!==setupAudio) r.current?.pause();});
       if(setupAudio.current) setupAudio.current.currentTime=0;
       setupAudio.current?.play().catch(()=>{});
+    } else if(showingStory){
+      all.forEach(r=>{if(r!==storyAudio) r.current?.pause();});
+      if(storyAudio.current) storyAudio.current.currentTime=0;
+      storyAudio.current?.play().catch(()=>{});
     } else {
       all.forEach(r=>{if(r!==gameAudio) r.current?.pause();});
       nextGameTrack.current?.();
