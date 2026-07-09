@@ -35,7 +35,8 @@ function makeRoomCode() {
 // from a different folder (e.g. Vite/CRA's public/), move this audio/ folder there —
 // a 404 in the network tab on these paths is the tell.
 const AUDIO_INTRO = "audio/intro-theme.mp3";
-const AUDIO_GAMEPLAY = "audio/gameplay-theme.mp3";
+// Main-game music is a shuffled playlist, not one looping track.
+const AUDIO_GAMEPLAY_TRACKS = ["audio/gameplay-theme.mp3","audio/gameplay-theme-2.mp3","audio/gameplay-theme-3.mp3"];
 const AUDIO_STORY = "audio/story-theme.mp3";
 const IMG_EARTH = "images/earth-cutout.png";
 const IMG_ASTEROID = "images/asteroid-farm-cutout.png";
@@ -1505,7 +1506,19 @@ export default function App(){
   useEffect(()=>{
     const a=new Audio(AUDIO_INTRO); a.loop=true;
     const s=new Audio(AUDIO_STORY); s.loop=true;
-    const b=new Audio(AUDIO_GAMEPLAY); b.loop=true;
+    // Gameplay music shuffles through the playlist instead of looping one track — pick a
+    // random track (never immediately repeating the one that just played) each time the
+    // current one ends.
+    const b=new Audio(); b.loop=false;
+    let curTrack=-1;
+    const nextTrack=()=>{
+      let i=0|Math.random()*AUDIO_GAMEPLAY_TRACKS.length;
+      if(AUDIO_GAMEPLAY_TRACKS.length>1) while(i===curTrack) i=0|Math.random()*AUDIO_GAMEPLAY_TRACKS.length;
+      curTrack=i;
+      b.src=AUDIO_GAMEPLAY_TRACKS[i];
+    };
+    nextTrack();
+    b.addEventListener("ended",()=>{nextTrack(); b.play().catch(()=>{});});
     introAudio.current=a; storyAudio.current=s; gameAudio.current=b;
     return()=>{a.pause();s.pause();b.pause();};
   },[]);
