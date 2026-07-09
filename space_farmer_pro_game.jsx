@@ -34,10 +34,11 @@ function makeRoomCode() {
 // Local files under /audio next to this component. If your bundler serves static assets
 // from a different folder (e.g. Vite/CRA's public/), move this audio/ folder there —
 // a 404 in the network tab on these paths is the tell.
-const AUDIO_INTRO = "audio/intro-theme.mp3";
-// Main-game music is a shuffled playlist, not one looping track.
-const AUDIO_GAMEPLAY_TRACKS = ["audio/gameplay-theme.mp3","audio/gameplay-theme-2.mp3","audio/gameplay-theme-3.mp3"];
-const AUDIO_STORY = "audio/story-theme.mp3";
+const AUDIO_INTRO = "audio/intro-theme.mp3"; // "Space Farmer" — loading screen only
+const AUDIO_SETUP = "audio/gameplay-theme.mp3"; // "Orbital Corn Rows" — Connect + Setup screens
+// The main game (story screen through actual rounds) is a shuffled playlist, not one
+// looping track — "Moonlit Save Point" plus the two "Focus Flow" tracks.
+const AUDIO_GAMEPLAY_TRACKS = ["audio/story-theme.mp3","audio/gameplay-theme-2.mp3","audio/gameplay-theme-3.mp3"];
 const IMG_EARTH = "images/earth-cutout.png";
 const IMG_ASTEROID = "images/asteroid-farm-cutout.png";
 // Progressive damage backdrop for the main game screen, tied to Vitality's existing
@@ -1344,7 +1345,7 @@ export default function App(){
   const[introDone,setIntroDone]=useState(false);
   const[volume,setVolume]=useState(0.5);
   const[muted,setMuted]=useState(false);
-  const introAudio=useRef(null), storyAudio=useRef(null), gameAudio=useRef(null);
+  const introAudio=useRef(null), setupAudio=useRef(null), gameAudio=useRef(null);
   const[playerNames,setPlayerNames]=useState(["Player 1","Player 2"]);
   // Hotseat/vs-computer only: whose hand is currently touchable in the Trade window.
   // Remote play doesn't use this — each device already only ever touches its own seat.
@@ -1513,8 +1514,8 @@ export default function App(){
 
   useEffect(()=>{
     const a=new Audio(AUDIO_INTRO); a.loop=true;
-    const s=new Audio(AUDIO_STORY); s.loop=true;
-    // Gameplay music shuffles through the playlist instead of looping one track — pick a
+    const s=new Audio(AUDIO_SETUP); s.loop=true;
+    // Main-game music shuffles through the playlist instead of looping one track — pick a
     // random track (never immediately repeating the one that just played) each time the
     // current one ends.
     const b=new Audio(); b.loop=false;
@@ -1527,36 +1528,33 @@ export default function App(){
     };
     nextTrack();
     b.addEventListener("ended",()=>{nextTrack(); b.play().catch(()=>{});});
-    introAudio.current=a; storyAudio.current=s; gameAudio.current=b;
+    introAudio.current=a; setupAudio.current=s; gameAudio.current=b;
     return()=>{a.pause();s.pause();b.pause();};
   },[]);
   useEffect(()=>{
     const v=muted?0:volume;
-    [introAudio,storyAudio,gameAudio].forEach(r=>{if(r.current) r.current.volume=v;});
+    [introAudio,setupAudio,gameAudio].forEach(r=>{if(r.current) r.current.volume=v;});
   },[volume,muted]);
-  // Three-phase soundtrack: loading screen -> story/tutorial -> gameplay. `showingStory`
-  // is recomputed below once `started` exists; this effect just reacts to the phase.
+  // Three music zones: loading screen ("Space Farmer") -> Connect/Setup ("Orbital Corn
+  // Rows") -> the main game, story screen through actual rounds, as one continuous
+  // shuffled zone (Moonlit Save Point + the two Focus Flow tracks).
   const showingStory=started&&!storyDone;
   useEffect(()=>{
-    const all=[introAudio,storyAudio,gameAudio];
-    // Intro theme covers the loading screen AND the Connect/Setup screens that follow it —
-    // gameplay music should only ever start once a round is actually underway. (Previously
-    // this only checked introDone, so Connect/Setup silently fell through to gameplay music
-    // the moment the loading screen finished.)
-    if(!introDone||!started){
+    const all=[introAudio,setupAudio,gameAudio];
+    if(!introDone){
       all.forEach(r=>r.current?.pause());
       if(introAudio.current) introAudio.current.currentTime=0;
       introAudio.current?.play().catch(()=>{});
-    } else if(showingStory){
-      all.forEach(r=>{if(r!==storyAudio) r.current?.pause();});
-      if(storyAudio.current) storyAudio.current.currentTime=0;
-      storyAudio.current?.play().catch(()=>{});
+    } else if(!started){
+      all.forEach(r=>{if(r!==setupAudio) r.current?.pause();});
+      if(setupAudio.current) setupAudio.current.currentTime=0;
+      setupAudio.current?.play().catch(()=>{});
     } else {
       all.forEach(r=>{if(r!==gameAudio) r.current?.pause();});
       if(gameAudio.current) gameAudio.current.currentTime=0;
       gameAudio.current?.play().catch(()=>{});
     }
-  },[introDone,started,showingStory]);
+  },[introDone,started]);
   const unlockAudio=()=>{ if(!introDone) introAudio.current?.play().catch(()=>{}); };
   // Browsers block audio until a user gesture happens *somewhere* on the page — there's no
   // way around that entirely, so instead of requiring the volume slider specifically, catch
