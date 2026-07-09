@@ -1512,6 +1512,7 @@ export default function App(){
     return()=>clearTimeout(t);
   },[connectMode,state.phase,tradeTurnIdx,state.players]);
 
+  const nextGameTrack=useRef(null);
   useEffect(()=>{
     const a=new Audio(AUDIO_INTRO); a.loop=true;
     const s=new Audio(AUDIO_SETUP); s.loop=true;
@@ -1528,6 +1529,7 @@ export default function App(){
     };
     nextTrack();
     b.addEventListener("ended",()=>{nextTrack(); b.play().catch(()=>{});});
+    nextGameTrack.current=nextTrack;
     introAudio.current=a; setupAudio.current=s; gameAudio.current=b;
     return()=>{a.pause();s.pause();b.pause();};
   },[]);
@@ -1537,7 +1539,9 @@ export default function App(){
   },[volume,muted]);
   // Three music zones: loading screen ("Space Farmer") -> Connect/Setup ("Orbital Corn
   // Rows") -> the main game, story screen through actual rounds, as one continuous
-  // shuffled zone (Moonlit Save Point + the two Focus Flow tracks).
+  // shuffled zone (Moonlit Save Point + the two Focus Flow tracks). Re-entering this zone
+  // at all (Setup->story, or story->actual rounds) forces a fresh random pick instead of
+  // just resuming whatever happened to still be playing.
   const showingStory=started&&!storyDone;
   useEffect(()=>{
     const all=[introAudio,setupAudio,gameAudio];
@@ -1551,10 +1555,10 @@ export default function App(){
       setupAudio.current?.play().catch(()=>{});
     } else {
       all.forEach(r=>{if(r!==gameAudio) r.current?.pause();});
-      if(gameAudio.current) gameAudio.current.currentTime=0;
+      nextGameTrack.current?.();
       gameAudio.current?.play().catch(()=>{});
     }
-  },[introDone,started]);
+  },[introDone,started,showingStory]);
   const unlockAudio=()=>{ if(!introDone) introAudio.current?.play().catch(()=>{}); };
   // Browsers block audio until a user gesture happens *somewhere* on the page — there's no
   // way around that entirely, so instead of requiring the volume slider specifically, catch
